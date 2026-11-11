@@ -5,6 +5,7 @@ import {f} from './calc.js';
 import * as HOME from './home.js';
 import {solve} from './formulas.js';
 import {Share} from './share.js';
+import {loadKB,findTopics,explainCue,knowledgeResult,fallbackResult,missResult,topicById,KMIN} from './knowledge.js';
 const MODES={
  hvac:{name:'HVAC engineer',blurb:'Duct and pipe sizes, cooling load, motor breakers, running cost, invoices',tag:'for HVAC engineers',key:'',model:'data/model.json',suggest:'data/suggest.json',LABEL:{...LABEL,formula_solve:'Any physics, maths or engineering formula'},START:[...SUGGEST_START.slice(0,5),'Use the Reynolds number formula for water at 1 m/s in a 50 mm pipe'],run,later:Object.keys(adv),subtitle:'Engineering back-office work for HVAC. Ask in plain words.',
    cards:Object.keys(LABEL).filter(k=>!['greeting','help_me','out_of_scope','new_chat','undo','show_calc','followup_same','edit_value','export_doc'].includes(k)&&!k.startsWith('adv_')).concat('formula_solve')},
@@ -55,6 +56,7 @@ function empty(){
     stage.querySelectorAll('[data-pickmode]').forEach(b=>b.onclick=()=>pickMode(b.dataset.pickmode));updateGhost();return}
   stage.innerHTML=`<div class="wrap empty"><button class="tag" id="chmode" title="Choose a different mode">${esc(M().tag)} · change</button><div class="logo big"><span class="z">Zygon</span><span class="dot">.</span><span class="c">cognition</span></div><p class="cap">Engineering back-office work, done. Ask in plain words or attach your files.</p><div class="sugs">${M().START.slice(0,6).map(s=>`<button class="sug">${esc(s)}</button>`).join('')}</div></div>`;
   stage.querySelectorAll('.sug').forEach(b=>b.onclick=()=>typeIn(b.textContent));$('#chmode').onclick=()=>{if(busy||cur.items.length)return;cur.mode=null;empty()};updateGhost()}
+async function showTopic(id){const t=topicById(id);if(!t||busy)return;await modeReady;const r=knowledgeResult(t,mode);r.meta={topic:id,intent:'explain'};commit(t.title,r,null,{tin:0,tout:tokens(r.short),route:0,tool:0,path:'explainer'})}
 async function pickMode(m){if(!MODES[m]||busy)return;cur.mode=m;if(m!==mode){mode=m;try{localStorage.setItem('zc_mode',JSON.stringify(m))}catch{}modeReady=loadMode()}await modeReady;save();renderList();empty();q.focus();Share.track({type:'mode',chat:cur.id,mode:m})}
 function waving(label='Working…'){stage.innerHTML=`<div class="wrap"><div class="wave">${'<i></i>'.repeat(17)}</div><div class="wlabel">${label}</div></div>`}
 const totals=r=>{const sub=r.table.rows.reduce((a,x)=>a+(+x[r.table.amountCol]||0),0);const tax=sub*(r.table.totals?.tax||0)/100;return {sub,tax,total:sub+tax}};
@@ -67,12 +69,15 @@ function paint(query,r,flash){
   if(r.kind==='help'){inner=`<h2>What I can do right now</h2><p class="sub">${esc(r.subtitle)}</p><div class="grid">${M().cards.map(k=>`<button class="mini go" data-open="${k}"><b>${esc(M().LABEL[k])}</b><span>tap to open</span></button>`).join('')}${M().later.map(k=>`<div class="mini soon"><b>${esc(M().LABEL[k])}</b><span>coming later</span></div>`).join('')}</div><p class="sub" style="margin-top:14px">${mode==='hvac'?'Attach PDFs or Excel sheets with the paperclip. ':''}Edit any highlighted cell, or say "the second number should be 12".</p>`}
   else if(r.kind==='advanced'){inner=`<span class="badge">ADVANCED · NOT IN THIS PROTOTYPE</span><h2>${esc(r.title)}</h2><p class="sub">${esc(r.subtitle)}</p>`}
   else if(r.kind==='ask'){inner=`<h2>${esc(r.title)}</h2><p class="sub">${esc(r.hint||'I need a little more to do this properly:')}</p><ol class="qlist">${r.questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ol>`}
+  else if(r.kind==='know'){inner=`<h2>${esc(r.title)}</h2><p class="kshort">${esc(r.short)}</p>${r.points?.length?`<ul class="kpts">${r.points.map(p=>`<li>${esc(p)}</li>`).join('')}</ul>`:''}${r.numbers?.length?`<div class="tbl"><table><tbody>${r.numbers.map(n=>`<tr><td>${esc(n[0])}</td><td class="num">${esc(n[1])}</td></tr>`).join('')}</tbody></table></div>`:''}${r.tryit?.length?`<div class="krow"><span class="pvl">Try it</span>${r.tryit.map(t=>`<button class="btn" data-try="${esc(t)}">${esc(t.length>60?t.slice(0,58)+'…':t)}</button>`).join('')}</div>`:''}${r.topics?.length?`<div class="krow"><span class="pvl">Learn about</span>${r.topics.map(t=>`<button class="btn" data-topic="${esc(t.id)}">${esc(t.title)}</button>`).join('')}</div>`:''}${r.related?.length?`<div class="krow"><span class="pvl">Related</span>${r.related.map(t=>`<button class="btn" data-topic="${esc(t.id)}">${esc(t.title)}</button>`).join('')}</div>`:''}${r.source?`<div class="srcline">More: <a href="${esc(r.source.url)}" target="_blank" rel="noopener">${esc(r.source.title)}</a></div>`:''}${r.points?.length?`<div class="note">General guidance to understand the idea. For real work, check the equipment nameplate and your local code.</div>`:''}`}
   else if(r.kind==='choose'){inner=`<h2>Which did you mean?</h2><p class="sub">I'm not sure. Pick one and I will remember it.</p><div class="row">${r.options.map(o=>`<button class="btn" data-pick="${o}">${esc(M().LABEL[o]||o)}</button>`).join('')}</div>`}
   else{inner=`<h2>${esc(r.title)}</h2><p class="sub">${esc(r.subtitle||'')}</p>${tableHTML(r)}${r.note?`<div class="note">${esc(r.note)}</div>`:''}${r.source?`<div class="srcline">Source: <a href="${esc(r.source.url)}" target="_blank" rel="noopener">${esc(r.source.title)}</a>${r.source.license?' · '+esc(r.source.license):''}</div>`:''}${r.steps?.length?`<div class="steps ${showCalc?'on':''}" id="steps"><b>Calculation</b><ol>${r.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol></div>`:''}
    <div class="row">${r.table?`<span class="pvl">Preview</span>`+Object.entries(FM).map(([k,v])=>`<button class="btn ${previewFmt===k?'on':''}" data-pv="${k}">${v}</button>`).join(''):''}${r.steps?.length?`<button class="btn ${showCalc?'on':''}" id="calcbtn">${showCalc?'Hide':'Show'} calculation</button>`:''}${undo.length?`<button class="btn" id="undobtn">Undo</button>`:''}</div>${previewPanel(r)}`}
   if(r.switch&&MODES[r.switch])inner=`<div class="row switchrow"><span class="pvl">This sounds like ${esc(MODES[r.switch].name)} mode</span><button class="btn pri" data-switch="${r.switch}">Switch to it</button></div>`+inner;
   const alsoH=r.meta?.also?.length?`<div class="also"><b>I also heard</b>${r.meta.also.map((x,i)=>`<button class="btn" data-also="${i}">${esc(x.text.length>70?x.text.slice(0,68)+'…':x.text)}</button>`).join('')}</div>`:'';
   stage.innerHTML=`<div class="wrap">${said}<div class="card">${inner}</div>${alsoH}</div>`;
+  stage.querySelectorAll('[data-try]').forEach(b=>b.onclick=()=>submit(b.dataset.try));
+  stage.querySelectorAll('[data-topic]').forEach(b=>b.onclick=()=>showTopic(b.dataset.topic));
   stage.querySelectorAll('[data-switch]').forEach(b=>b.onclick=()=>setMode(b.dataset.switch));
   stage.querySelectorAll('[data-also]').forEach(b=>b.onclick=()=>submit(r.meta.also[+b.dataset.also].text));
   stage.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exportAs(b.dataset.x,r));
@@ -136,6 +141,8 @@ function previewHTML(k,r){
 
 // ---------- understanding ----------
 const ORD={first:1,'1st':1,second:2,'2nd':2,third:3,'3rd':3,fourth:4,'4th':4,fifth:5,'5th':5,sixth:6,last:-1};
+const LOWSCORE=1.8;
+const TALK=[[/^(thanks|thank you|thx|ty|thanks a lot|thank you so much)\b/i,'You are welcome. Ask me anything else, or pick a topic to learn about.'],[/\b(bye|goodbye|see you|good night|talk later)\b/i,'Goodbye. Your chats stay saved in this browser.'],[/\b(how are you|how r u|how do you do|how is it going|whats up|what\'s up)\b/i,"I'm fine, thanks. I'm a small program, so no feelings to report, but I'm ready. What shall we work on?"],[/\b(who are you|what is your name|what's your name|whats your name|your name|are you (chat ?gpt|gpt|an? ai|a bot|a robot|human|real|a person)|who (made|built|created|developed) you)\b/i,"I'm Zygon.cognition, a small assistant that runs in your browser. I'm not ChatGPT and I don't write free text. I work out what you are asking, then run an exact calculation or show a short note, and I always show the steps."]];
 const modeHint=t=>{const s=t.toLowerCase();if(mode==='hvac'&&/\b(home|house|household|flat|apartment|bhk|ceiling fans?|bulbs?|tube ?lights?|geyser|mcb|wiring|electricity bills?|light bills?)\b/.test(s))return 'home';if(mode==='home'&&/\b(hvac|duct|ducts|cfm|chiller|chilled|tonnage|ahu|refrigeration|psychrometric|dew point|invoice|labour)\b/.test(s))return 'hvac';return null};
 window.__zyg={peek:t=>intake(t,hx),score:t=>hx.score(t)};   // read-only helper for testing the intake filter
 async function submit(text){
@@ -147,11 +154,24 @@ async function submit(text){
   const heard=ik.changed&&q!==text?{heard:q,ignored:ik.ignored,words:ik.words,also:ik.also,intakeMs:+intakeMs.toFixed(2),prompt:q}:{prompt:q,also:[]};
   if(cur.title==='New chat'){cur.title=q.slice(0,38);renderList()}
   const t0=performance.now();waving();
-  const t0b=performance.now();const tr=hx.trace(q,3);const traceMs=performance.now()-t0b;let intent=tr.top[0].intent,res,mm=null;if((ik.mode==='filtered'||ik.mode==='meta')&&ik.intent){intent=ik.intent;tr.confident=true}
+  const t0b=performance.now();const tr=hx.trace(q,3);const traceMs=performance.now()-t0b;let intent=tr.top[0].intent,res,mm=null;if((ik.mode==='filtered'||ik.mode==='meta')&&ik.intent){intent=ik.intent;tr.confident=true}else if(tr.confident&&tr.top[0].score<LOWSCORE&&!/\d/.test(text))tr.confident=false;   // words it barely knows are not a request
   const ctx={files:files[cur.id].all,sheets:files[cur.id].sheets,pdfs:files[cur.id].pdfs,store,current:cur.last?.result};
   try{
     await new Promise(r=>setTimeout(r,650));const t1=performance.now();
-    if(!tr.confident){const opts=tr.top.map(x=>x.intent).filter(i=>!['greeting'].includes(i));res={kind:'choose',options:opts,meta:{...heard}};{const sw=modeHint(text);if(sw)res.switch=sw}commit(text,res,null,{tin:tokens(text),tout:tokens(outText(res)),route:traceMs,tool:0,path:'asked you'});busy=false;return}
+    // a few polite phrases get a short stored reply
+    {const t=text.trim(),st=t.split(/\s+/).length<=9&&TALK.find(([re])=>re.test(t));
+     if(st){const r={kind:'know',title:'Zygon.cognition',short:st[1],points:[],numbers:[],tryit:M().START.slice(0,3),related:[],meta:{...heard,intent:'smalltalk'}};commit(text,r,null,{tin:tokens(text),tout:tokens(st[1]),route:traceMs,tool:0,path:'stored reply'});busy=false;return}}
+    // questions like "explain me about lights and fans" get a plain-language note, not a calculation
+    await loadKB();
+    {const cue=explainCue(text),hasNum=/\d/.test(text)||/\d\s*(?:kw|w|v|a|hp|tons?|tr|cfm|hours?|hrs?|%|percent|m\/s|c|ft|sq|m|mm|kg|rpm|rupees?|rs|people|by|bhk|floors?)\b/i.test(q),metaI=['help_me','out_of_scope','greeting'].includes(intent);
+     const tops=findTopics(cue?(q+' '+text):q,mode,3),top=tops[0];
+     const done=r=>{r.meta={...heard,...(r.meta||{}),intent:'explain'};const sw=modeHint(text);if(sw&&!r.switch)r.switch=sw;commit(text,r,null,{tin:tokens(text),tout:tokens(outText(r)),route:traceMs,tool:0,path:'explainer'});busy=false};
+     if(cue&&/\b(this|that|the result|the answer|the above|how did you|how you got)\b/i.test(text)&&cur.last?.result?.steps?.length){res=await dispatch('show_calc',q,ctx);if(res){res.meta={...(res.meta||{}),...heard,intent:'show_calc'};commit(text,res,null,{tin:tokens(text),tout:tokens(outText(res)),route:traceMs,tool:0,path:'explained the last answer'})}busy=false;return}
+     if(top&&top.score>=KMIN&&!hasNum&&(cue||!tr.confident||metaI)){const r=knowledgeResult(top.topic,mode);const more=tops.slice(1).filter(x=>x.score>=0.6*top.score&&x.score>=KMIN).map(x=>({id:x.topic.id,title:x.topic.title}));r.related=[...more,...r.related.filter(x=>!more.some(m=>m.id===x.id))].slice(0,4);done(r);return}
+     if(cue&&!hasNum&&(metaI||!tr.confident||intent==='formula_solve')){done(missResult(mode,M().START));return}}
+    if(!tr.confident){const opts=tr.top.map(x=>x.intent).filter(i=>!['greeting','help_me','out_of_scope','show_calc','undo','new_chat','edit_value','export_doc','followup_same','store_docs'].includes(i));
+      if(opts.length>=2&&(tr.top[0].score>=3||/\d/.test(text))){res={kind:'choose',options:opts,meta:{...heard}}}else{res=fallbackResult(mode,M().START);res.meta={...heard,topic:'(none)',intent:'fallback'}}
+      {const sw=modeHint(text);if(sw)res.switch=sw}commit(text,res,null,{tin:tokens(text),tout:tokens(outText(res)),route:traceMs,tool:0,path:'asked you'});busy=false;return}
     res=await dispatch(intent,q,ctx);
     if(res&&!res.switch&&(['help_me','out_of_scope','formula_solve'].includes(intent)||res.kind==='ask'||res.kind==='choose')){const sw=modeHint(text);if(sw)res.switch=sw}
     if(res){res.meta={...(res.meta||{}),intent,traceMs:+traceMs.toFixed(2),...heard};mm={tin:tokens(text),tout:tokens(outText(res)),route:traceMs+intakeMs,tool:performance.now()-t1,path:learnedFor(q,intent)?'taught (your words)':'pre-learned'}}

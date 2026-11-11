@@ -25,6 +25,7 @@ function build(x){
   if(meta.heard)ev.heard=redact(meta.heard).slice(0,1500);
   if(meta.ignored)ev.ignored=meta.ignored;
   if(meta.intent)ev.intent=meta.intent;
+  if(meta.topic)ev.topic=meta.topic;
   if(x.r){ev.kind=r.kind||(r.table?'result':'message');ev.title=String(r.title||'').slice(0,120);
     if(r.subtitle)ev.sub=redact(r.subtitle).slice(0,160);
     if(r.note)ev.note=String(r.note).slice(0,160);

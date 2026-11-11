@@ -169,3 +169,7 @@ button.tag{cursor:pointer;border:1px solid var(--line);background:none;color:var
 .sw{display:flex;gap:8px;align-items:center;cursor:pointer}.sub2{margin:6px 0 10px;color:var(--mute);font-size:12.5px}code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
 #consent .mbox{max-width:480px}#consent p{margin:0 0 10px;line-height:1.5}#consent .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 .nameinput{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;margin-top:4px}.nameinput.small{width:170px;padding:5px 8px;margin:0 2px}.nameinput.need{border-color:#e5484d}
+
+/* explainer notes */
+.kshort{font-size:16px;line-height:1.55;margin:4px 0 12px}.kpts{margin:0 0 12px;padding-left:20px;line-height:1.55}.kpts li{margin:5px 0}
+.krow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 0}.krow .btn{max-width:100%;white-space:normal;text-align:left}

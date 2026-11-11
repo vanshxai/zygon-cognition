@@ -6,6 +6,8 @@ Two modes, chosen when you start a chat:
 - **HVAC engineer**: duct and pipe sizes, cooling load, motor breaker, running cost, psychrometrics, invoices, maintenance reminders, any of ~200 physics/maths/engineering formulas.
 - **Home electrician** (Indian homes): monthly bill, lights and fans per room, MCB and wire size, comparison with your real bill.
 
+It also explains basics in plain language ("explain me about lights and fans", "what is an MCB", "what is a ton of refrigeration"). Those notes are written text in `data/knowledge.json`, found by the same word-voting idea. Anything it has no note for is answered honestly ("I don't have a note on that yet") and logged so a note can be added.
+
 Every answer shows its steps. Inputs that break a physics rule (a negative flow, 200% humidity, a hot side colder than the cold side) are refused instead of calculated.
 
 ## Run it locally
@@ -33,6 +35,7 @@ If the webhook is unreachable the app works exactly the same and nothing is sent
     js/engine.js               the voting router (Hexonet)
     js/tools.js, home.js       calculators for the two modes
     js/physics.js              refuses impossible inputs
+    js/knowledge.js            finds the explainer note for a question (data/knowledge.json)
     js/formulas.js             formula library solver (data/formulas.json, rules and sources)
     js/share.js                the opt-in chat sharing
     data/                      trained router tables and formulas
