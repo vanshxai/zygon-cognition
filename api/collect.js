@@ -12,6 +12,7 @@ module.exports=async(req,res)=>{
   const uid=String(b.uid||'');if(!/^[A-Za-z0-9-]{8,64}$/.test(uid))return send(res,400,{error:'bad id'});
   try{
     if(b.op==='forget'){await R.pipeline([['DEL','log:'+uid],['DEL','user:'+uid],['SREM','users',uid]]);return send(res,200,{ok:true})}
+    const name=String(b.name||'').replace(/[\u0000-\u001f<>]/g,'').trim().slice(0,60);
     const evs=Array.isArray(b.events)?b.events.slice(0,MAX_EVENTS):[];if(!evs.length)return send(res,200,{ok:true,stored:0});
     const now=Date.now(),cc=String(req.headers['x-vercel-ip-country']||'').slice(0,2),ua=String(req.headers['user-agent']||'').slice(0,140);
     const rows=[];for(const e of evs){if(!e||typeof e!=='object')continue;const s=JSON.stringify({...e,ts:now,cc});if(s.length<=MAX_EVENT)rows.push(s)}
@@ -19,6 +20,6 @@ module.exports=async(req,res)=>{
     const hour=Math.floor(now/3600000);
     const [n]=await R.pipeline([['INCRBY','rl:'+uid+':'+hour,rows.length],['EXPIRE','rl:'+uid+':'+hour,7200]]);
     if(n>MAX_PER_HOUR)return send(res,429,{error:'slow down'});
-    await R.pipeline([['RPUSH','log:'+uid,...rows],['LTRIM','log:'+uid,-KEEP_PER_USER,-1],['SADD','users',uid],['HSETNX','user:'+uid,'first',String(now)],['HSET','user:'+uid,'last',String(now),'ua',ua,'v',String(b.v||'').slice(0,20),'cc',cc]]);
+    await R.pipeline([['RPUSH','log:'+uid,...rows],['LTRIM','log:'+uid,-KEEP_PER_USER,-1],['SADD','users',uid],['HSETNX','user:'+uid,'first',String(now)],['HSET','user:'+uid,'last',String(now),'ua',ua,'v',String(b.v||'').slice(0,20),'cc',cc,...(name?['name',name]:[])]]);
     return send(res,200,{ok:true,stored:rows.length})
   }catch(e){return send(res,500,{error:'storage error'})}};

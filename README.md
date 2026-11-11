@@ -19,17 +19,17 @@ The chat sharing (below) needs the two API routes, so locally it simply stays qu
 1. Import this repository in Vercel. No build step, no framework: leave everything at the defaults.
 2. **Optional, to collect the test chats:**
    - In the Vercel project go to **Storage**, add **Upstash Redis** (free tier) and connect it to the project. Vercel adds its environment variables by itself.
-   - In **Settings → Environment Variables** add `ADMIN_KEY` with a long random value of your choice. Keep it private; it is the password for the admin page.
+   - In **Settings → Environment Variables** add `ADMIN_KEY` with a long random value of your choice. Keep it private; it is the password for reading the chats.
    - Redeploy once.
-3. Open `https://<your-site>/admin`, type the admin key, and you can read every shared chat, search them, and download JSON or CSV.
+3. The shared chats are read through `/api/export` with the admin key (see below). There is no admin page on the website.
 
 ## Test-version chat sharing
 
-On first visit each person sees a notice. If they agree, each question they type and the title/first rows of Zygon's reply are sent to `/api/collect`, tagged with a random anonymous ID created in their browser. Email addresses and long digit strings are blanked first. Attached files are never sent. They can switch it off, and delete what was shared, in Settings.
+On first visit each person sees a notice and is asked for their name (nothing else). If they agree, their name, each question they type and the title/first rows of Zygon's reply are sent to `/api/collect`, tagged with a random anonymous ID created in their browser. Email addresses and long digit strings typed into messages are blanked first. Attached files are never sent. They can switch it off, change their name, and delete what was shared, in Settings.
 
 - `api/collect.js` stores events in Redis (`log:<id>` lists, capped at 5,000 per person, rate limited).
 - `api/export.js` returns them, only with the `x-admin-key` header.
-- `admin.html` is the viewer. It is not linked from the app.
+- Reading the chats: `GET /api/export?users=1` (list), `?uid=<id>` (one person), `?all=1` (everything), with the header `x-admin-key: <ADMIN_KEY>`. Only the maintainer's local script uses this; it is not in this repository.
 
 If you do not set up Redis, the app works exactly the same and nothing is sent.
 

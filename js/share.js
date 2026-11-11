@@ -7,6 +7,7 @@ const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
 const rnd=()=>{try{return crypto.randomUUID()}catch{return 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)}};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+const cleanName=v=>String(v??'').replace(/[\u0000-\u001f<>]/g,'').replace(/\s+/g,' ').trim().slice(0,60);
 let uid=lsGet('zc_uid',null);if(!uid){uid=rnd();lsSet('zc_uid',uid)}
 const sid=rnd().slice(0,8);                       // one id per page visit
 let outbox=lsGet('zc_outbox',[]);
@@ -36,7 +37,7 @@ function build(x){
   return ev}
 
 async function post(events,beacon){
-  const body=JSON.stringify({uid,v:VERSION,events});
+  const body=JSON.stringify({uid,name:cleanName(lsGet('zc_name','')),v:VERSION,events});
   if(beacon&&navigator.sendBeacon){try{return navigator.sendBeacon(ENDPOINT,new Blob([body],{type:'application/json'}))}catch{}}
   const res=await fetch(ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body,keepalive:body.length<60000});
   return res.ok}
@@ -54,6 +55,8 @@ if(typeof window!=='undefined')addEventListener('pagehide',()=>{if(Share.enabled
 
 export const Share={
   uid:()=>uid,shortId:()=>uid.slice(0,8),
+  name:()=>cleanName(lsGet('zc_name','')),
+  setName(v){lsSet('zc_name',cleanName(v));if(outbox.length)schedule(500)},
   enabled:()=>lsGet('zc_share',null)==='yes',
   needsConsent:()=>lsGet('zc_share',null)===null,
   setConsent(v){lsSet('zc_share',v?'yes':'no');if(v){paused=false;failures=0;if(outbox.length)schedule(500)}else{outbox=[];persist()}},
@@ -61,10 +64,11 @@ export const Share={
   async forget(){try{const res=await fetch(ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uid,op:'forget'})});if(res.ok){outbox=[];persist();return true}}catch{}return false},
   askConsent(){
     const box=document.getElementById('consent'),body=document.getElementById('consentbody');if(!box||!body)return;
-    body.innerHTML=`<p>Zygon.cognition is being tested. To make it better, the messages you type here, and the titles of Zygon's replies, are sent to the developers. They are tagged with a random ID, not your name or email.</p>
+    body.innerHTML=`<p>Zygon.cognition is being tested. To make it better, your name and the messages you type here, with the titles of Zygon's replies, are sent to the developers. They are tagged with a random ID. No email or other details are asked.</p>
       <p>Attached files are never sent. Please do not type personal or confidential information. You can switch this off, and delete what was shared, in Settings at any time.</p>
+      <input id="consentname" class="nameinput" maxlength="60" placeholder="Your name" autocomplete="name" value="${esc(Share.name())}">
       <div class="row"><button class="btn pri" id="consentyes">OK, share and continue</button><button class="btn" id="consentno">Use without sharing</button></div>`;
-    box.hidden=false;
-    document.getElementById('consentyes').onclick=()=>{Share.setConsent(true);box.hidden=true};
+    box.hidden=false;const ni=document.getElementById('consentname');setTimeout(()=>ni.focus(),50);
+    document.getElementById('consentyes').onclick=()=>{if(!cleanName(ni.value)){ni.classList.add('need');ni.focus();return}Share.setName(ni.value);Share.setConsent(true);box.hidden=true};
     document.getElementById('consentno').onclick=()=>{Share.setConsent(false);box.hidden=true}}
 };

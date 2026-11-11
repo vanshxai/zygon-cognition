@@ -13,10 +13,10 @@ module.exports=async(req,res)=>{
   if(!R.configured())return send(res,503,{error:'storage not configured'});
   const q=new URL(req.url,'http://x').searchParams;
   try{
-    if(q.get('uid')){const uid=q.get('uid');if(!/^[A-Za-z0-9-]{8,64}$/.test(uid))return send(res,400,{error:'bad id'});const [l,u]=await R.pipeline([['LRANGE','log:'+uid,0,-1],['HGETALL','user:'+uid]]);return send(res,200,{uid,events:parse(l)})}
+    if(q.get('uid')){const uid=q.get('uid');if(!/^[A-Za-z0-9-]{8,64}$/.test(uid))return send(res,400,{error:'bad id'});const [l,u]=await R.pipeline([['LRANGE','log:'+uid,0,-1],['HGETALL','user:'+uid]]);const nm={};for(let k=0;k<(u||[]).length;k+=2)nm[u[k]]=u[k+1];return send(res,200,{uid,name:nm.name||'',events:parse(l)})}
     const ids=(await R.pipeline([['SMEMBERS','users']]))[0]||[];
-    if(q.get('all')){const out=[];for(let i=0;i<ids.length&&out.length<20000;i+=20){const part=ids.slice(i,i+20);const lists=await R.pipeline(part.map(id=>['LRANGE','log:'+id,0,-1]));lists.forEach((l,k)=>parse(l).forEach(e=>out.push({uid:part[k],...e})))}return send(res,200,{events:out.slice(0,20000)})}
+    if(q.get('all')){const out=[];for(let i=0;i<ids.length&&out.length<20000;i+=20){const part=ids.slice(i,i+20);const res2=await R.pipeline([...part.map(id=>['LRANGE','log:'+id,0,-1]),...part.map(id=>['HGET','user:'+id,'name'])]);const lists=res2.slice(0,part.length),names=res2.slice(part.length);lists.forEach((l,k)=>parse(l).forEach(e=>out.push({uid:part[k],name:names[k]||'',...e})))}return send(res,200,{events:out.slice(0,20000)})}
     const info=await R.pipeline(ids.flatMap(id=>[['LLEN','log:'+id],['HGETALL','user:'+id]]));
-    const users=ids.map((id,i)=>{const h=info[i*2+1]||[];const o={};for(let k=0;k<h.length;k+=2)o[h[k]]=h[k+1];return {uid:id,events:info[i*2],first:+o.first||0,last:+o.last||0,country:o.cc||'',version:o.v||''}}).sort((a,b)=>b.last-a.last);
+    const users=ids.map((id,i)=>{const h=info[i*2+1]||[];const o={};for(let k=0;k<h.length;k+=2)o[h[k]]=h[k+1];return {uid:id,name:o.name||'',events:info[i*2],first:+o.first||0,last:+o.last||0,country:o.cc||'',version:o.v||''}}).sort((a,b)=>b.last-a.last);
     return send(res,200,{users})
   }catch(e){return send(res,500,{error:'storage error'})}};
