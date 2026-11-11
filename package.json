@@ -1,0 +1,7 @@
+{
+  "name": "zygon-cognition",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Zygon.cognition: a small offline engineering assistant that runs in the browser (static site plus two optional API routes for the test-version chat sharing).",
+  "engines": { "node": ">=18" }
+}
