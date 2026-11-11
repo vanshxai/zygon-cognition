@@ -12,26 +12,18 @@ Every answer shows its steps. Inputs that break a physics rule (a negative flow,
 
     python3 -m http.server 5173      # then open http://localhost:5173
 
-The chat sharing (below) needs the two API routes, so locally it simply stays quiet.
 
 ## Deploy on Vercel
 
-1. Import this repository in Vercel. No build step, no framework: leave everything at the defaults.
-2. **Optional, to collect the test chats:**
-   - In the Vercel project go to **Storage**, add **Upstash Redis** (free tier) and connect it to the project. Vercel adds its environment variables by itself.
-   - In **Settings → Environment Variables** add `ADMIN_KEY` with a long random value of your choice. Keep it private; it is the password for reading the chats.
-   - Redeploy once.
-3. The shared chats are read through `/api/export` with the admin key (see below). There is no admin page on the website.
+Import this repository in Vercel and deploy with the defaults. There is no build step, no environment variable and no database to set up: it is a static site.
 
 ## Test-version chat sharing
 
-On first visit each person sees a notice and is asked for their name (nothing else). If they agree, their name, each question they type and the title/first rows of Zygon's reply are sent to `/api/collect`, tagged with a random anonymous ID created in their browser. Email addresses and long digit strings typed into messages are blanked first. Attached files are never sent. They can switch it off, change their name, and delete what was shared, in Settings.
+On first visit each person sees a notice and is asked for their name (nothing else). If they agree, their name, each question they type and the title/first rows of Zygon's reply are sent in small batches, tagged with a random anonymous ID created in their browser. Email addresses and long digit strings typed into messages are blanked first. Attached files are never sent. They can switch it off, change their name, and ask for deletion in Settings.
 
-- `api/collect.js` stores events in Redis (`log:<id>` lists, capped at 5,000 per person, rate limited).
-- `api/export.js` returns them, only with the `x-admin-key` header.
-- Reading the chats: `GET /api/export?users=1` (list), `?uid=<id>` (one person), `?all=1` (everything), with the header `x-admin-key: <ADMIN_KEY>`. Only the maintainer's local script uses this; it is not in this repository.
+The batches go to a write-only Make.com webhook (`js/share.js`) that files them in a private data store. The webhook address can only be written to; the chats can be read only from the maintainer's Make account. Free Make plans allow about 1,000 actions and 1 MB of storage a month, which is enough for a small test.
 
-If you do not set up Redis, the app works exactly the same and nothing is sent.
+If the webhook is unreachable the app works exactly the same and nothing is sent.
 
 ## What is where
 
@@ -44,7 +36,6 @@ If you do not set up Redis, the app works exactly the same and nothing is sent.
     js/formulas.js             formula library solver (data/formulas.json, rules and sources)
     js/share.js                the opt-in chat sharing
     data/                      trained router tables and formulas
-    api/, lib/                 the two Vercel functions
     vendor/                    pdf-lib, ExcelJS, PptxGenJS, pdf.js (permissive licences)
 
 ## Honest limits

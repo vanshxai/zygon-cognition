@@ -1,7 +1,8 @@
 // Test-version sharing: with the person's consent, each question and the title of Zygon's reply are sent to the developers,
 // tagged with a random anonymous ID. Attached files are never sent. If the server is not there, nothing breaks: the app works as before.
 const VERSION='2026-11-11';
-const ENDPOINT=(typeof window!=='undefined'&&window.ZC_COLLECT)||'/api/collect';
+// Chats go to a write-only webhook (Make.com) that files them in a private data store; the address can be posted to but cannot be read back.
+const ENDPOINT=(typeof window!=='undefined'&&window.ZC_COLLECT)||'https://hook.eu2.make.com/yd00g7cfw6qd0i7wnm7mzw7inwfxeky8';
 const lsGet=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
 const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
 const rnd=()=>{try{return crypto.randomUUID()}catch{return 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)}};
@@ -36,10 +37,10 @@ function build(x){
   try{ev.lang=navigator.language;ev.w=innerWidth}catch{}
   return ev}
 
-async function post(events,beacon){
-  const body=JSON.stringify({uid,name:cleanName(lsGet('zc_name','')),v:VERSION,events});
-  if(beacon&&navigator.sendBeacon){try{return navigator.sendBeacon(ENDPOINT,new Blob([body],{type:'application/json'}))}catch{}}
-  const res=await fetch(ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body,keepalive:body.length<60000});
+async function post(events,beacon,op){
+  const p=new URLSearchParams({uid,name:cleanName(lsGet('zc_name','')),v:VERSION,op:op||'events',sent:String(Date.now()),events:JSON.stringify(events)});   // a plain form post: works from any page, no preflight
+  if(beacon&&navigator.sendBeacon){try{return navigator.sendBeacon(ENDPOINT,p)}catch{}}
+  const res=await fetch(ENDPOINT,{method:'POST',body:p,keepalive:p.toString().length<60000});
   return res.ok}
 
 async function flush(beacon=false){
@@ -60,8 +61,8 @@ export const Share={
   enabled:()=>lsGet('zc_share',null)==='yes',
   needsConsent:()=>lsGet('zc_share',null)===null,
   setConsent(v){lsSet('zc_share',v?'yes':'no');if(v){paused=false;failures=0;if(outbox.length)schedule(500)}else{outbox=[];persist()}},
-  track(x){if(!Share.enabled())return;try{outbox.push(build(x));persist();schedule(2500)}catch{}},
-  async forget(){try{const res=await fetch(ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({uid,op:'forget'})});if(res.ok){outbox=[];persist();return true}}catch{}return false},
+  track(x){if(!Share.enabled())return;try{outbox.push(build(x));persist();schedule(outbox.length>=8?1000:25000)}catch{}},   // sent in batches: fewer calls, and the free storage service counts calls
+  async forget(){try{const ok=await post([],false,'forget');if(ok){outbox=[];persist();return true}}catch{}return false},
   askConsent(){
     const box=document.getElementById('consent'),body=document.getElementById('consentbody');if(!box||!body)return;
     body.innerHTML=`<p>Zygon.cognition is being tested. To make it better, your name and the messages you type here, with the titles of Zygon's replies, are sent to the developers. They are tagged with a random ID. No email or other details are asked.</p>

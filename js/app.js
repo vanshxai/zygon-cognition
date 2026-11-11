@@ -274,11 +274,11 @@ async function openSettings(){
     <tr><td>Mathematical accuracy</td><td>100%</td></tr>
     <tr><td>Hardware</td><td>No GPU</td></tr></tbody></table>
    <h4>Memory</h4><div class="mem">Chat memory: ${used<0.1?Math.round(used*1000)+' KB':used.toFixed(2)+' MB'} of ${MEM_MB()} MB used</div>
-   <h4>Sharing</h4><div class="mem"><label class="sw"><input type="checkbox" id="shareon" ${Share.enabled()?'checked':''}> Share my chats with the developers (test version)</label><div class="sub2">Your name: <input id="sharename" class="nameinput small" maxlength="60" value="${esc(Share.name())}" placeholder="Your name"> · ID <code>${esc(Share.shortId())}</code>. Attached files are never shared.</div><button class="btn" id="shareforget">Delete what I shared</button> <span id="sharemsg" class="sub2"></span></div>`;
+   <h4>Sharing</h4><div class="mem"><label class="sw"><input type="checkbox" id="shareon" ${Share.enabled()?'checked':''}> Share my chats with the developers (test version)</label><div class="sub2">Your name: <input id="sharename" class="nameinput small" maxlength="60" value="${esc(Share.name())}" placeholder="Your name"> · ID <code>${esc(Share.shortId())}</code>. Attached files are never shared.</div><button class="btn" id="shareforget">Ask to delete what I shared</button> <span id="sharemsg" class="sub2"></span></div>`;
   $('#setbody').querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
   $('#shareon').onchange=e=>Share.setConsent(e.target.checked);
   $('#sharename').onchange=e=>Share.setName(e.target.value);
-  $('#shareforget').onclick=async()=>{$('#sharemsg').textContent='Deleting…';const ok=await Share.forget();$('#sharemsg').textContent=ok?'Deleted.':'Could not reach the server; nothing was changed.'}}
+  $('#shareforget').onclick=async()=>{$('#sharemsg').textContent='Deleting…';const ok=await Share.forget();$('#sharemsg').textContent=ok?'Request sent. The developers will delete it.':'Could not reach the server; nothing was changed.'}}
 $('#settingsbtn').onclick=openSettings;$('#setclose').onclick=()=>$('#settings').hidden=true;
 $('#settings').onclick=e=>{if(e.target.id==='settings')$('#settings').hidden=true};
 
