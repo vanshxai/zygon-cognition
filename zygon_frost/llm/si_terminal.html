@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZYGON</title>
+<style>
+:root{--bg:#0d1117;--panel:#11161d;--line:#222a33;--ink:#c9d1d9;--mute:#6e7681;--acc:#2bb8c8;--warn:#e3b341}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:13px/1.55 ui-monospace,Consolas,"Cascadia Mono",monospace;display:flex;flex-direction:column}
+header{display:flex;align-items:baseline;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);flex:none}
+.logo{color:var(--acc);font-weight:700;font-size:15px;letter-spacing:.5px}.sub{color:var(--mute)}#dot{margin-left:auto;color:var(--mute)}
+main{flex:1;display:flex;min-height:0}
+#term{flex:1 1 58%;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line)}
+#log{flex:1;overflow-y:auto;padding:14px 20px}
+.u{color:var(--acc);margin-top:14px}.u:before{content:"› ";color:var(--mute)}
+.r{margin:6px 0 2px;white-space:pre-wrap;word-wrap:break-word;line-height:1.7}
+.seg{border-bottom:1px solid;padding-bottom:1px;cursor:help}.s0{border-color:#2bb8c8}.s1{border-color:#e3b341}.s2{border-color:#a371f7}.s3{border-color:#56d364}
+.m{color:var(--mute);font-size:12px}.m b{color:var(--ink);font-weight:500}.sys{color:var(--mute);white-space:pre-wrap}
+details{margin:2px 0 6px}summary{cursor:pointer;color:var(--mute);font-size:12px}table{border-collapse:collapse;font-size:12px}
+td,th{padding:1px 10px 1px 0;text-align:left;font-weight:400;vertical-align:top}th{color:var(--mute)}td.n,th.n{text-align:right}
+form{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--line);flex:none}form span{color:var(--acc)}
+#in{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font:inherit}
+#side{flex:0 0 400px;overflow-y:auto;padding:6px 18px 30px;background:var(--panel)}
+h4{margin:18px 0 6px;font-size:11px;letter-spacing:1.5px;color:var(--mute);font-weight:500}
+.row{display:flex;justify-content:space-between;gap:12px}.row span:first-child{color:var(--mute)}.row span:last-child{text-align:right}
+.bar{height:3px;background:var(--line);margin:6px 0 8px}.bar i{display:block;height:100%;background:var(--acc);width:0}
+.pdf{display:flex;gap:6px;margin-top:4px}.pdf input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);color:var(--ink);font:inherit;padding:3px 6px}
+button{background:transparent;border:1px solid var(--line);color:var(--ink);font:inherit;padding:2px 10px;cursor:pointer}button:hover{border-color:var(--acc);color:var(--acc)}
+#feed{color:var(--mute);font-size:11.5px;max-height:190px;overflow:hidden}#feed div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#feed div:last-child{color:var(--ink)}
+canvas{display:block;width:100%}#cvw{position:relative;height:300px;background:#06100f;margin-top:6px}#cv{height:100%;cursor:grab}#tip{position:absolute;display:none;pointer-events:none;background:#000d;border:1px solid var(--line);padding:4px 8px;font-size:11px}
+@media(max-width:900px){main{flex-direction:column}#side{flex:none;max-height:45%}#term{border-right:0}}
+</style></head><body>
+<header><span class="logo">ZYGON</span><span class="sub">solo, no 3B model, no matrices</span><span id="dot">connecting</span></header>
+<main>
+ <section id="term"><div id="log"></div><form id="f"><span>›</span><input id="in" autocomplete="off" autofocus placeholder="ask about what it has learned, or /help"></form></section>
+ <aside id="side">
+  <h4>LEARN A PDF</h4>
+  <div class="pdf"><input id="path" placeholder="C:\path\to\file.pdf"></div>
+  <div class="pdf"><button id="blive">Learn live</button><button id="bfast">Full speed</button><button id="bstop">Stop</button></div>
+  <div class="pdf"><button id="bteach">Teach English (live)</button><button id="bteachfast">Teach English (fast)</button><button id="btest">Run self-test</button></div>
+  <h4>NOW</h4><div id="now"></div><div class="bar"><i id="pb"></i></div><div id="feed"></div>
+  <h4>DOCUMENTS LEARNED</h4><div id="docs"></div>
+  <h4>MEMORY</h4><div id="mem"></div><canvas id="chart" height="64"></canvas>
+  <h4>REPLY SPEED</h4><div id="rep"></div>
+  <h4>EXPONENT CUBE</h4><details id="cubed"><summary>10 x 10 x 10, one exponent per cell</summary>
+   <div id="cvw"><canvas id="cv"></canvas><div id="tip"></div></div><div id="cinfo" class="m" style="margin-top:6px"></div><div class="pdf"><button id="cb1">Stop spin</button><button id="cb2">Hide relations</button></div></details>
+ </aside>
+</main>
+<script src="/cube_view.js"></script>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const api = (u, b) => fetch(u, b === undefined ? {} : {method: 'POST', body: JSON.stringify(b)}).then(r => r.json());
+const B = b => b === null || b === undefined ? '-' : b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(2) + ' MB';
+const N = n => n === null || n === undefined ? '-' : Math.round(n).toLocaleString(), S = (x, d = 3) => x === null || x === undefined ? '-' : x.toFixed(d) + ' s', MS = x => x === null || x === undefined ? '-' : x < 10 ? x.toFixed(2) + ' ms' : x.toFixed(1) + ' ms';
+const SRC = x => !x || x === 'pdf' ? 'bitcoin.pdf' : x;
+const row = (a, b) => `<div class="row"><span>${a}</span><span>${b}</span></div>`;
+let ST = null, running = false, lastState = '';
+// ---------------------------------------------------------------- terminal
+const log = $('#log');
+function add(html, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html; log.appendChild(d); log.scrollTop = 1e9; return d; }
+add('ZYGON, solo. It learned bitcoin.pdf on its own and can learn more PDFs live (right side). Ask it anything about what it has read.<br>It answers by joining learned words with angle wheels. Type /help for commands.', 'sys');
+async function ask(q) {
+  add(esc(q), 'u'); const t0 = performance.now(); const r = await api('/api/ask', {q}); const wall = performance.now() - t0;
+  if (r.kind === 'dialogue') {
+    add(esc(r.text), 'r'); add(`<b>${MS(r.ms)}</b> &middot; ${r.tokens} tokens &middot; learned conversation: ${esc(r.cat)} &middot; matched "${esc(r.matched)}" &middot; ${r.wordings} wordings, ${r.replies_known} repl${r.replies_known > 1 ? 'ies' : 'y'} known for this`, 'm'); return refresh();
+  }
+  if (!r.found) { add(`<span class="m">I do not know that yet${r.known_words && r.known_words.length ? ' (I know these words from documents: ' + esc(r.known_words.join(', ')) + ')' : ''}. I know greetings, basic English and grammar (type /teach if I have not been taught), and what is in the documents I read. ${MS(r.ms)}</span>`, 'r'); return refresh(); }
+  const src = {}; let k = 0; const map = {}; r.segments.forEach(s => { if (!(s.pid in map)) map[s.pid] = k++ % 4; });
+  const html = r.segments.map(s => `<span class="seg s${map[s.pid]}" title="from sentence #${s.pid}: ${esc(SRC(s.source))}\n${esc(s.sentence)}">${esc(s.text)}</span>`).join('');
+  const d = add('', 'r'); d.innerHTML = html;
+  const sources = [...new Set(r.segments.map(s => SRC(s.source)))].join(', ');
+  const m = add(`<b>${MS(r.ms)}</b> &middot; ${r.tokens} tokens &middot; ${r.tokens_per_s ? N(r.tokens_per_s) : '-'} tokens/s &middot; joined from ${r.segments.length} piece${r.segments.length > 1 ? 's' : ''} &middot; ${esc(sources)}`, 'm');
+  const det = document.createElement('details'); det.innerHTML = `<summary>how it was joined</summary><div class="m">sentences the query's words hooked into: ${r.matched.map(x => `#${x.pid} (${Math.round(100 * x.cover)}%, ${esc(SRC(x.source))})`).join(', ')}<br>wheel orders used (how many previous tokens the angle wheel looked at): ${esc(JSON.stringify(r.wheel_orders))}<br>search ${MS(r.search_ms)}, join ${MS(r.ms - r.search_ms)}</div>
+   <table><tr><th>token</th><th>identity</th><th class="n">wheel order</th><th class="n">sector share</th></tr>${r.trace.slice(0, 80).map(t => `<tr><td>${esc(JSON.stringify(t.piece))}</td><td>${t.identity}</td><td class="n">${t.order}</td><td class="n">${Math.round(100 * t.share)}%</td></tr>`).join('')}</table>`;
+  log.appendChild(det); log.scrollTop = 1e9; refresh();
+}
+async function teach(watch) {
+  const r = await api('/api/lessons', {watch}); if (r.error) return add(esc(r.error), 'sys');
+  add(`teaching basic English: greetings, small talk, who it is, vocabulary, grammar and simple reading ${watch ? '(live, slowed so you can watch)' : '(full speed)'}; numbers are on the right. A self-test follows.`, 'sys'); poll();
+}
+async function selftest() {
+  add('running the self-test (wordings it was never taught)...', 'sys'); const t = await api('/api/test', {}); showTest(t); refresh();
+}
+function showTest(t) {
+  add(`self-test: <b>${t.matched_right_topic} / ${t.taught_wordings_tested}</b> untaught wordings reached the right lesson (${(100 * t.accuracy).toFixed(1)}%), ${MS(t.mean_ms)} each<br>document questions wrongly answered as chat: ${t.document_questions_wrongly_answered_as_chat.length} of ${t.document_questions_tested}; unknown questions wrongly answered: ${t.unknown_questions_wrongly_answered.length} of ${t.unknown_questions_tested}` +
+    (t.failures.length ? '<br>missed: ' + t.failures.map(f => `"${esc(f.q)}" (wanted ${esc(f.wanted)}, got ${esc(f.got || 'nothing')})`).join('; ') : ''), 'sys');
+}
+async function learn(path, watch) {
+  path = path || $('#path').value.trim() || (ST && ST.default_pdf) || ''; if (!path) return add('give a PDF path first', 'sys');
+  const r = await api('/api/ingest', {path, watch}); if (r.error) return add(esc(r.error), 'sys');
+  add(`learning ${esc(path.split(/[\\/]/).pop())} ${watch ? 'live (slowed so you can watch)' : 'at full speed'}; numbers are on the right.`, 'sys'); poll();
+}
+$('#f').onsubmit = e => { e.preventDefault(); const q = $('#in').value.trim(); $('#in').value = ''; if (!q) return;
+  if (q === '/help') add('/teach          teach basic English and conversation live<br>/teachfast      same at full speed<br>/test           run the self-test<br>/learn [path]   learn a PDF live<br>/fast [path]    learn at full speed<br>/stop           stop learning<br>/stats          print the numbers<br>/clear          clear this screen<br>anything else is a question', 'sys');
+  else if (q === '/clear') log.innerHTML = '';
+  else if (q === '/stop') api('/api/stop', {});
+  else if (q === '/teach') teach(true); else if (q === '/teachfast') teach(false); else if (q === '/test') selftest();
+  else if (q.startsWith('/learn')) learn(q.slice(6).trim(), true);
+  else if (q.startsWith('/fast')) learn(q.slice(5).trim(), false);
+  else if (q === '/stats') { const s = ST; add(`${s.total.pages} pages, ${N(s.total.words)} words, ${N(s.total.tokens)} tokens learned in ${S(s.total.learn_s)}<br>memory ${B(s.memory.bytes)} (${s.memory.bytes_per_token.toFixed(1)} B per token), ${N(s.memory.wheels)} wheels, ${N(s.memory.sectors)} sectors, ${N(s.memory.hooks)} hooks<br>replies: ${s.reply.n}, mean ${MS(s.reply.mean_ms)}`, 'sys'); }
+  else ask(q); };
+$('#blive').onclick = () => learn('', true); $('#bfast').onclick = () => learn('', false); $('#bstop').onclick = () => api('/api/stop', {});
+$('#bteach').onclick = () => teach(true); $('#bteachfast').onclick = () => teach(false); $('#btest').onclick = () => selftest();
+// ---------------------------------------------------------------- metrics
+async function refresh() {
+  ST = await api('/api/state'); const s = ST, j = s.job; $('#dot').textContent = j.state === 'learning' || j.state === 'reading' || j.state === 'preparing' || j.state === 'testing' ? j.state + '...' : 'ready'; $('#dot').style.color = $('#dot').textContent === 'ready' ? '#56d364' : '#e3b341';
+  if (!$('#path').value && s.default_pdf) $('#path').value = s.default_pdf;
+  running = ['reading', 'preparing', 'learning', 'testing'].includes(j.state);
+  if (j.state === 'done' && j.test && !window.shownTest) { window.shownTest = true; showTest(j.test); }
+  if (j.state === 'learning' || j.state === 'reading') window.shownTest = false;
+  if (!j.name) { $('#now').innerHTML = '<span class="m">no PDF is being learned</span>'; $('#pb').style.width = '0'; $('#feed').innerHTML = ''; }
+  else {
+    const pct = j.state === 'testing' || j.state === 'done' ? 100 : j.state === 'reading' ? 100 * j.pages_read / Math.max(1, j.pages_total) : j.sentences_total ? 100 * j.sentences / j.sentences_total : 0; $('#pb').style.width = pct + '%';
+    const les = j.lessons; const tps = j.learn_s > 0 ? j.tokens / j.learn_s : null, sps = j.learn_s > 0 ? j.sentences / j.learn_s : null;
+    $('#now').innerHTML = row('file', esc(j.name)) + row('state', j.state + (j.watch ? ' (watch mode)' : '')) + (les ? row('lessons taught', `${j.sentences} / ${j.sentences_total}`) + row('wordings hooked', N(j.wordings)) + row('replies', N(j.replies)) + row('words', N(j.words_learned)) : row('pdf size', B(j.pdf_bytes)) + row('pages', `${j.pages_read} / ${j.pages_total}`) + row('words in the PDF', N(j.words_pdf)) +
+      row('words learned', `${N(j.words_learned)}${j.words_learned_total ? ' / ' + N(j.words_learned_total) : ''}`) + row('sentences', `${N(j.sentences)}${j.sentences_total ? ' / ' + N(j.sentences_total) : ''}`)) + row('tokens', `${N(j.tokens)}${j.tokens_total ? ' / ' + N(j.tokens_total) : ''}`) +
+      row('reading the PDF', S(j.extract_s, 2)) + row('tokenising', S(j.tokenise_s, 2)) + row('<b style="color:var(--ink)">learning time</b>', `<b style="color:var(--acc)">${S(j.learn_s)}</b>`) + row('time on screen', S(j.wall_s, 1)) +
+      row('learning speed', tps ? `${N(tps)} tokens/s, ${N(sps)} sentences/s` : '-') + row('per sentence', j.sentences ? MS(1000 * j.learn_s / j.sentences) : '-');
+    $('#feed').innerHTML = (j.feed || []).map(f => `<div>p.${f.page} &nbsp;${esc(f.text)}</div>`).join('');
+  }
+  $('#docs').innerHTML = '<table><tr><th>file</th><th class="n">pages</th><th class="n">words</th><th class="n">tokens</th><th class="n">learned in</th><th class="n">tokens/s</th></tr>' + s.docs.map(d => `<tr><td>${esc(d.name)}</td><td class="n">${d.pages === null ? '-' : d.pages}</td><td class="n">${N(d.words_pdf)}</td><td class="n">${N(d.tokens)}</td><td class="n">${S(d.learn_s)}</td><td class="n">${N(d.tokens_per_s)}</td></tr>`).join('') +
+    `<tr><td style="color:var(--mute)">total</td><td class="n">${s.total.pages}</td><td class="n">${N(s.total.words)}</td><td class="n">${N(s.total.tokens)}</td><td class="n">${S(s.total.learn_s)}</td><td class="n"></td></tr></table>`;
+  const m = s.memory;
+  $('#mem').innerHTML = row('learned structures', `${B(m.bytes)}`) + row('per token', m.bytes_per_token.toFixed(1) + ' B') + row('this program\'s RAM', B(m.process_ram)) + row('on disk (log, metrics)', B(m.disk_bytes)) + row('wheels / sectors', `${N(m.wheels)} / ${N(m.sectors)}`) + row('hooks', N(m.hooks)) + row('learned sentences / lessons', N(m.sentences) + ' / ' + N(s.lessons)) + row('token identities', N(m.identities));
+  chart(s.curve);
+  const r = s.reply; $('#rep').innerHTML = row('replies given', `${r.n}${r.not_found ? ' (+' + r.not_found + ' not found)' : ''}`) + row('mean', MS(r.mean_ms)) + row('fastest / slowest', `${MS(r.fastest_ms)} / ${MS(r.slowest_ms)}`) + row('speed', r.tokens_per_s ? N(r.tokens_per_s) + ' tokens/s' : '-') + row('mean length', r.mean_tokens ? Math.round(r.mean_tokens) + ' tokens' : '-') + row('for comparison, the 3B model', '~560 ms per token');
+}
+function chart(c) { const cv = $('#chart'), w = cv.clientWidth, h = 64, x = cv.getContext('2d'); cv.width = w; cv.height = h; x.clearRect(0, 0, w, h); x.strokeStyle = '#222a33'; x.strokeRect(.5, .5, w - 1, h - 1);
+  if (!c || c.length < 2) { x.fillStyle = '#6e7681'; x.font = '11px monospace'; x.fillText('memory against tokens learned appears while a PDF is learned', 8, 36); return; }
+  const mx = Math.max(...c.map(p => p[1])), mt = Math.max(...c.map(p => p[0])); x.beginPath(); c.forEach((p, i) => { const px = 6 + p[0] / mt * (w - 12), py = h - 6 - p[1] / mx * (h - 12); i ? x.lineTo(px, py) : x.moveTo(px, py); }); x.strokeStyle = '#2bb8c8'; x.lineWidth = 1.5; x.stroke();
+  x.fillStyle = '#6e7681'; x.font = '10px monospace'; x.fillText(B(mx) + ' at ' + N(mt) + ' tokens', 8, 12); }
+let timer = null; function poll() { clearInterval(timer); timer = setInterval(async () => { await refresh(); if (!running) { clearInterval(timer); timer = setInterval(refresh, 3000); } if ($('#cubed').open && running) loadCube(); }, 400); }
+const cube = makeCube($('#cv'), $('#tip'), $('#cinfo')); async function loadCube() { const d = await api('/api/cube'); cube.setData(d); }
+$('#cubed').addEventListener('toggle', () => { if ($('#cubed').open) { cube.fit(); loadCube(); } }); $('#cb1').onclick = e => { e.target.textContent = cube.toggleSpin() ? 'Stop spin' : 'Spin'; }; $('#cb2').onclick = e => { e.target.textContent = cube.toggleRel() ? 'Hide relations' : 'Show relations'; };
+refresh().then(() => { poll(); }); addEventListener('resize', () => chart(ST && ST.curve));
+</script></body></html>

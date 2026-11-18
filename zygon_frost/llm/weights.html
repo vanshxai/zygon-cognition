@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Frost 1.0 weights</title>
+<style>
+body{font:13px/1.35 Consolas,monospace;margin:10px 14px;background:#fff;color:#000}
+pre{margin:2px 0;font:inherit}
+h3{font-size:13px;margin:14px 0 2px;border-bottom:1px solid #000}
+input,select,button{font:inherit}
+input[type=text]{width:46em}input[type=number]{width:5em}
+table{border-collapse:collapse}td{padding:0 8px 0 0;text-align:right;white-space:pre}
+.l{text-align:left}
+#tick{height:11.5em;overflow:hidden}
+</style></head><body>
+<a href="/">&larr; back to the transcript</a>
+<pre id="model"></pre>
+<h3>WEIGHT BROWSER (every number in the file, dequantized to float)</h3>
+filter <input type="text" id="flt" style="width:14em" placeholder="e.g. blk.12 or ffn_down">
+<select id="tsel" size="9" style="width:60em"></select><br>
+row <input type="number" id="r0" value="0"> col <input type="number" id="c0" value="0">
+rows <input type="number" id="nr" value="20"> cols <input type="number" id="nc" value="12">
+<button id="go">Go</button> <button id="rdn">rows -</button><button id="rup">rows +</button>
+<button id="cdn">cols -</button><button id="cup">cols +</button>
+<pre id="wtitle"></pre>
+<div id="wtab"></div>
+<pre id="wblock"></pre>
+
+<script>
+const $ = s => document.querySelector(s);
+const fx = (x, d=5) => (x >= 0 ? ' ' : '') + x.toFixed(d);
+const N = x => Math.round(x).toLocaleString();
+let tensors = [];
+// ---- weight browser --------------------------------------------------------
+function fillList() {
+  const f = $('#flt').value.toLowerCase(), sel = $('#tsel'); sel.innerHTML = '';
+  tensors.filter(t => t[0].toLowerCase().includes(f)).forEach(t => {
+    const o = document.createElement('option'); o.value = t[0];
+    o.textContent = `${t[0].padEnd(30)} [${t[1]} x ${t[2]}]`.padEnd(48) + `${t[3].padEnd(5)} ${N(t[4]).padStart(12)} weights`;
+    sel.appendChild(o); });
+}
+async function loadW(keep) {
+  const name = $('#tsel').value; if (!name) return;
+  const q = new URLSearchParams({name, r0: $('#r0').value, c0: $('#c0').value, nr: $('#nr').value, nc: $('#nc').value});
+  const w = await (await fetch('/api/weights?' + q)).json();
+  $('#r0').value = w.r0; $('#c0').value = w.c0;
+  $('#wtitle').textContent = `${w.name}  [${w.shape[0]} rows x ${w.shape[1]} cols]  ${w.qtype}  ${N(w.n)} weights   showing rows ${w.r0}.. cols ${w.c0}..`;
+  const hdr = '<tr><td></td>' + w.rows[0].map((_, j) => `<td>c${w.c0 + j}</td>`).join('') + '</tr>';
+  $('#wtab').innerHTML = '<table>' + hdr + w.rows.map((r, i) => `<tr><td>r${w.r0 + i}</td>` + r.map(v => `<td>${fx(v, 5)}</td>`).join('') + '</tr>').join('') + '</table>';
+  $('#wblock').textContent = `\nRAW BYTES of the quantized block holding W[${w.r0}][${w.c0}] (this is what is literally in the .gguf file):\n${w.info}\n${w.hex}`;
+}
+$('#flt').oninput = fillList; $('#go').onclick = () => loadW();
+$('#tsel').onchange = () => { $('#r0').value = 0; $('#c0').value = 0; loadW(); };
+const bump = (id, d) => { $(id).value = Math.max(0, +$(id).value + d); loadW(); };
+$('#rdn').onclick = () => bump('#r0', -(+$('#nr').value)); $('#rup').onclick = () => bump('#r0', +$('#nr').value);
+$('#cdn').onclick = () => bump('#c0', -(+$('#nc').value)); $('#cup').onclick = () => bump('#c0', +$('#nc').value);
+
+(async () => {
+  const t = await (await fetch('/api/tensors')).json(); tensors = t.tensors;
+  $('#model').textContent =
+`Frost 1.0 (based on Qwen2.5-3B-Instruct)   ${N(t.params)} weights in ${tensors.length} tensors   ${t.layers} layers x ${N(t.per_layer)} multiply-adds + ${N(t.head)} (output head) = ${N(t.per_layer * t.layers + t.head)} multiply-adds per token`;
+  fillList(); $('#tsel').selectedIndex = 0;
+})();
+</script></body></html>

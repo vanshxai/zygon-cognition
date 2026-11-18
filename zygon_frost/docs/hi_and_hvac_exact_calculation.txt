@@ -1,0 +1,337 @@
+EXACT CALCULATION OF TWO PROMPTS IN THE 3B MODEL (Qwen2.5-3B-Instruct, 36 blocks, 2048 numbers per piece)
+Plain text maths. Symbols: * times, / divided by, ^ power, sqrt() square root, e^(x) the exponential, sum over j of ... means add up the term for every j.
+Every number below was computed by running the real model (see llm/doc_calc.py and llm/trace_model.py). Numbers are shown with 5 significant digits. [a, b, ...] shows the first numbers of a row of 2048.
+
+HOW ONE PASS WORKS (what each block does to the running row x of 2048 numbers)
+  A  h = x / sqrt(mean(x^2) + 0.000001) * gain                     scale the row to a steady size
+  B  q = Wq * h + bq,  k = Wk * h + bk,  v = Wv * h + bv            three views of the row; (W * h)[i] = sum over j of W[i][j] * h[j]
+  C  q and k are turned by an angle that depends on the position   so the model knows the order of the pieces
+  D  score[t] = sum(q * k[t]) / sqrt(128);  weight[t] = e^score[t] / sum of e^score;  head output = sum over t of weight[t] * v[t]
+  E  x_mid = x + Wo * (all 16 head outputs joined)                   attention result added back
+  F  scale again as in A
+  G  gate = Wgate * h2,  up = Wup * h2,  silu(g) = g / (1 + e^(-g)),  act = silu(gate) * up
+  H  x_out = x_mid + Wdown * act                                     feed-forward result added back
+  After the 36th block:  xn = final scale of x;  score[piece] = sum over i of word_table[piece][i] * xn[i];  the best-scoring piece is the next word.
+The prompt is read in ONE pass (all its pieces together). Then every new word costs one more pass through all 36 blocks, feeding the previous word back in.
+
+
+
+####################################################################################################
+# PROMPT: 'hi'
+####################################################################################################
+Chat text sent to the model (30 pieces). Each piece is shown as  position: id = text
+  0: 151644 = '<|im_start|>'   1: 8948 = 'system'   2: 198 = '\n'   3: 2610 = 'You'   4: 525 = ' are'   5: 1207 = ' Q'   6: 16948 = 'wen'   7: 11 = ','   8: 3465 = ' created'   9: 553 = ' by'   10: 54364 = ' Alibaba'   11: 14817 = ' Cloud'   12: 13 = '.'   13: 1446 = ' You'   14: 525 = ' are'   15: 264 = ' a'   16: 10950 = ' helpful'   17: 17847 = ' assistant'   18: 13 = '.'   19: 151645 = '<|im_end|>'   20: 198 = '\n'   21: 151644 = '<|im_start|>'   22: 872 = 'user'   23: 198 = '\n'   24: 6023 = 'hi'   25: 151645 = '<|im_end|>'   26: 198 = '\n'   27: 151644 = '<|im_start|>'   28: 77091 = 'assistant'   29: 198 = '\n'
+
+Step 0. Look up the rows.  x[position] = word_table[id]   (each row = 2048 numbers). We follow the LAST position (29), because its final row decides the first word of the reply.
+  x[29] = word_table[198] = [0.037964, -0.013138, -0.010223, 0.020447, -0.02774, -0.016052, ...]   size |x| = sqrt(sum of squares) = 1.2611
+
+================ BLOCK 1 of 36, worked in full for position 29 ================
+A. Scale the row (RMSNorm).   rms = sqrt(mean(x^2) + 0.000001) = 0.027884   h = x / rms * gain
+   x    = [0.037964, -0.013138, -0.010223, 0.020447, -0.02774, -0.016052, ...]
+   gain = [0.26758, 0.33984, 0.28516, 0.25977, 0.30664, 0.31055, ...]   (2048 stored numbers of this block)
+   h    = [0.36431, -0.16012, -0.10455, 0.19048, -0.30506, -0.17878, ...]
+B. query q[head 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.013023 * 0.36431) + (-0.043549 * -0.16012) + (-0.0069199 * -0.10455) + (0.035828 * 0.19048) + ...
+   bias -0.081055 + sum of all 2048 products 0.30922 = 0.22817
+B. key k[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0.0049324 * 0.36431) + (-0.034821 * -0.16012) + (-0.010971 * -0.10455) + (-0.0030193 * 0.19048) + ...
+   bias -2.9688 + sum of all 2048 products 2.4205 = -0.54823
+B. value v[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0 * 0.36431) + (0.015396 * -0.16012) + (-0.0087967 * -0.10455) + (0.016495 * 0.19048) + ...
+   bias 0.063965 + sum of all 2048 products -0.061998 = 0.0019666
+C. Mark the position (rotary).  angle = position * 1000000^(-2*0/128) = 29   cos = -0.74806  sin = -0.66363
+   q'[0] = q[0]*cos - q[64]*sin = 0.22817*-0.74806 - 3.2666*-0.66363 = 1.9972   (the same turn is applied to every pair of numbers of every query and key)
+D. Head 1 asks: how much does position 29 care about each earlier position?   score[t] = sum(q' * k'[t]) / sqrt(128),  weight[t] = e^score[t] / sum of e^score
+   position 29 '\n': score 22.281  weight 0.40785
+   position 28 'assistant': score 21.459  weight 0.17921
+   position 26 '\n': score 20.696  weight 0.083564
+   position 15 ' a': score 20.47  weight 0.066649
+   head 1 output = sum over t of weight[t] * v[t] = [-0.020268, 0.011737, 0.024487, 0.090564, -0.072455, -0.002199, ...]   (16 heads like this, then joined: 2048 numbers)
+E. Mix the heads.  attn_out[i] = sum over j of Wo[i][j] * joined[j] = [0.022822, 0.068705, 0.075054, 0.0026718, 0.027157, -0.042369, ...]   then  x_mid = x + attn_out = [0.060786, 0.055567, 0.06483, 0.023119, -0.00058382, -0.058421, ...]
+F. Scale again.  rms = 0.25679   h2 = x_mid / rms * gain2 = [0.088307, 0.097208, 0.11785, 0.02154, -0.0010968, -0.11642, ...]
+G. The strongest of the 11008 feed-forward neurons for this position is neuron 8862.
+   gate = sum over j of Wgate[8862][j] * h2[j] = (0.0013809 * 0.088307) + (0.019577 * 0.097208) + (0.019577 * 0.11785) + ... = 1.21
+   up   = sum over j of Wup[8862][j] * h2[j]   = -1.1981
+   silu(gate) = gate / (1 + e^(-gate)) = 1.21 / (1 + e^(-1.21)) = 0.93201
+   act = silu(gate) * up = 0.93201 * -1.1981 = -1.1166
+   Gates open (silu(gate) > 0.1): 3.2% of 11008 neurons.  Top 5 act values: n8862=-1.1166, n693=1.1027, n3271=-0.96313, n11005=0.76721, n10326=0.60598
+H. Squeeze back.  ffn_out[0] = sum over n of Wdown[0][n] * act[n]  (11008 terms) ; biggest terms: n11005: -0.028702*0.76721=-0.02202, n1574: -0.042633*-0.48401=0.020635, n693: -0.01741*1.1027=-0.019198 ; total = -0.12795
+   ffn_out = [-0.12795, -0.040084, -0.07246, 0.13283, -0.067644, 0.11482, ...]   x_out = x_mid + ffn_out = [-0.067169, 0.015483, -0.0076298, 0.15595, -0.068228, 0.0564, ...]   size |x_out| = 14.116
+
+   ... blocks 2 to 35 do the same steps A to H with their own stored numbers (see the table below) ...
+
+================ BLOCK 36 of 36, worked in full for position 29 ================
+A. Scale the row (RMSNorm).   rms = sqrt(mean(x^2) + 0.000001) = 8.3591   h = x / rms * gain
+   x    = [2.7026, -0.54027, -0.9676, -3.5973, -3.1529, 3.8119, ...]
+   gain = [1.2188, 1.2109, 1.3047, 1.3359, 1.2656, 1.2969, ...]   (2048 stored numbers of this block)
+   h    = [0.39403, -0.078267, -0.15102, -0.57492, -0.47737, 0.5914, ...]
+B. query q[head 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.022415 * 0.39403) + (0.01506 * -0.078267) + (0.025772 * -0.15102) + (0.0097046 * -0.57492) + ...
+   bias -0.85547 + sum of all 2048 products 0.15728 = -0.69819
+B. key k[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.018936 * 0.39403) + (-0.00085974 * -0.078267) + (-0.0068855 * -0.15102) + (-0.00085974 * -0.57492) + ...
+   bias -1.3594 + sum of all 2048 products 0.56271 = -0.79666
+B. value v[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0.091797 * 0.39403) + (0.011841 * -0.078267) + (0.053284 * -0.15102) + (0.035522 * -0.57492) + ...
+   bias 0.023682 + sum of all 2048 products -1.0243 = -1.0006
+C. Mark the position (rotary).  angle = position * 1000000^(-2*0/128) = 29   cos = -0.74806  sin = -0.66363
+   q'[0] = q[0]*cos - q[64]*sin = -0.69819*-0.74806 - 0.71987*-0.66363 = 1   (the same turn is applied to every pair of numbers of every query and key)
+D. Head 1 asks: how much does position 29 care about each earlier position?   score[t] = sum(q' * k'[t]) / sqrt(128),  weight[t] = e^score[t] / sum of e^score
+   position 2 '\n': score 7.5989  weight 0.26471
+   position 28 'assistant': score 7.521  weight 0.24488
+   position 29 '\n': score 6.931  weight 0.13575
+   position 0 '<|im_start|>': score 6.669  weight 0.10445
+   head 1 output = sum over t of weight[t] * v[t] = [-0.39858, -0.18658, -0.014725, -0.27822, -0.012702, -0.18786, ...]   (16 heads like this, then joined: 2048 numbers)
+E. Mix the heads.  attn_out[i] = sum over j of Wo[i][j] * joined[j] = [0.59507, 0.30317, 0.27885, 0.067033, 0.17327, -0.59552, ...]   then  x_mid = x + attn_out = [3.2976, -0.2371, -0.68875, -3.5303, -2.9797, 3.2164, ...]
+F. Scale again.  rms = 8.6744   h2 = x_mid / rms * gain2 = [0.61479, -0.043776, -0.1284, -0.65816, -0.56624, 0.60254, ...]
+G. The strongest of the 11008 feed-forward neurons for this position is neuron 4017.
+   gate = sum over j of Wgate[4017][j] * h2[j] = (-0.016785 * 0.61479) + (-0.0055084 * -0.043776) + (0.0057716 * -0.1284) + ... = 4.9637
+   up   = sum over j of Wup[4017][j] * h2[j]   = 27.675
+   silu(gate) = gate / (1 + e^(-gate)) = 4.9637 / (1 + e^(-4.9637)) = 4.9293
+   act = silu(gate) * up = 4.9293 * 27.675 = 136.42
+   Gates open (silu(gate) > 0.1): 11.5% of 11008 neurons.  Top 5 act values: n4017=136.42, n9164=111.14, n6312=-67.462, n8443=-63.769, n3349=55.385
+H. Squeeze back.  ffn_out[0] = sum over n of Wdown[0][n] * act[n]  (11008 terms) ; biggest terms: n5825: -0.022964*18.705=-0.42955, n3181: 0.012421*27.588=0.34266, n8443: -0.0051727*-63.769=0.32986 ; total = 1.4285
+   ffn_out = [1.4285, -0.85392, 2.93, -0.36883, -0.33913, 1.0737, ...]   x_out = x_mid + ffn_out = [4.7262, -1.091, 2.2412, -3.8991, -3.3188, 4.2901, ...]   size |x_out| = 224.83
+
+================ ALL 36 BLOCKS, position 29 (sizes of the running row) ================
+block   |x in|    attention changed the row by   feed-forward changed it by   |x out|    gates open
+    1       1.26        922.5 %                        45.1 %                  14.12      3.2 %
+    2      14.12         64.8 %                        16.3 %                  18.59      0.0 %
+    3      18.59         38.8 %                        28.8 %                  20.41      0.0 %
+    4      20.41         24.4 %                        31.9 %                  21.16      0.0 %
+    5      21.16         31.9 %                        28.5 %                  23.19      0.0 %
+    6      23.19         28.6 %                        32.5 %                  24.87      0.2 %
+    7      24.87         34.3 %                        41.5 %                  27.94      0.2 %
+    8      27.94         39.4 %                        43.8 %                  31.69      0.2 %
+    9      31.69         31.0 %                        39.0 %                  35.45      0.4 %
+   10      35.45         24.5 %                        44.2 %                  38.91      0.7 %
+   11      38.91         29.4 %                        36.9 %                  39.32      2.0 %
+   12      39.32         24.6 %                        44.0 %                  38.99      6.2 %
+   13      38.99         30.5 %                        55.4 %                  47.09      5.5 %
+   14      47.09         24.5 %                        50.1 %                  51.52      9.5 %
+   15      51.52         21.4 %                        52.0 %                  52.16     10.4 %
+   16      52.16         26.7 %                        40.6 %                  50.84     11.9 %
+   17      50.84         23.5 %                        38.3 %                  55.35     11.5 %
+   18      55.35         24.3 %                        37.1 %                  54.03     14.9 %
+   19      54.03         24.8 %                        42.1 %                  60.86     13.3 %
+   20      60.86         17.1 %                        28.4 %                  59.12     13.2 %
+   21      59.12         18.2 %                        33.7 %                  60.06     12.1 %
+   22      60.06         24.3 %                        39.2 %                  67.02     15.6 %
+   23      67.02         20.7 %                        38.1 %                  70.26     17.1 %
+   24      70.26         25.3 %                        43.7 %                  71.16     19.5 %
+   25      71.16         23.1 %                        44.1 %                  75.78     20.6 %
+   26      75.78         15.2 %                        54.1 %                  83.94     20.5 %
+   27      83.94         26.3 %                        51.4 %                  96.16     23.4 %
+   28      96.16         25.9 %                        43.1 %                 113.54     23.6 %
+   29     113.54         24.1 %                        47.6 %                 126.01     23.8 %
+   30     126.01         11.9 %                        46.9 %                 138.24     24.6 %
+   31     138.24          8.4 %                        60.7 %                 174.22     26.8 %
+   32     174.22         20.5 %                        54.3 %                 212.08     23.0 %
+   33     212.08         11.7 %                        45.0 %                 264.91     19.4 %
+   34     264.91         12.5 %                        37.0 %                 334.87     22.4 %
+   35     334.87         11.4 %                        20.9 %                 378.29     19.3 %
+   36     378.29          7.0 %                        94.2 %                 224.83     11.5 %
+
+================ THE LAST STEP: choose the first word ================
+Scale the final row.  rms = sqrt(mean(x^2) + 0.000001) = 4.9682   xn = x / rms * final_gain = [2.9133, -0.68626, 1.4239, -2.4648, -2.0771, 2.6445, ...]
+Score every one of the 151936 pieces with the SAME word table:  score[piece] = sum over i of word_table[piece][i] * xn[i]   (2048 terms each)
+Turn scores into chances:  chance[piece] = e^(score - best) / sum over all 151936 pieces of e^(score - best)
+   piece 9707 'Hello': first terms 0.0027561*2.9133 + -0.01516*-0.68626 + ... = score 35.009   chance 0.9941
+   piece 13048 'Hi': first terms -0.048065*2.9133 + 0.016525*-0.68626 + ... = score 29.56   chance 0.0043
+   piece 18665 'Hey': first terms -0.014442*2.9133 + 0.014442*-0.68626 + ... = score 28.346   chance 0.0013
+   piece 108386 '你好': first terms -0.02298*2.9133 + -0.019699*-0.68626 + ... = score 26.717   chance 0.0002
+   piece 111308 '您好': first terms -0.024704*2.9133 + -0.037659*-0.68626 + ... = score 24.948   chance 0.0000
+The best piece is chosen: 'Hello'.  Total over all pieces of e^(score - best) = 1.0059
+
+
+================ THE WHOLE REPLY, pass by pass ================
+pass  piece fed in            best next piece (chance)      next 4 best
+   1  <whole prompt, 30 pieces> 'Hello' (0.9941)                    'Hi' 0.004, 'Hey' 0.001, '你好' 0.000, '您好' 0.000
+   2  'Hello'                  '!' (1.0000)                         '！' 0.000, ' there' 0.000, '!I' 0.000, ' again' 0.000
+   3  '!'                      ' How' (0.9997)                      ' It' 0.000, '如何' 0.000, 'How' 0.000, ' �' 0.000
+   4  ' How'                   ' can' (0.9999)                      ' may' 0.000, ' might' 0.000, "'s" 0.000, '可以' 0.000
+   5  ' can'                   ' I' (1.0000)                        'I' 0.000, ' assist' 0.000, ' we' 0.000, ' i' 0.000
+   6  ' I'                     ' assist' (0.9552)                   ' help' 0.045, ' assistance' 0.000, '帮助' 0.000, 'assist' 0.000
+   7  ' assist'                ' you' (1.0000)                      '你' 0.000, '您' 0.000, 'you' 0.000, ' You' 0.000
+   8  ' you'                   ' today' (1.0000)                    '今天' 0.000, '今日' 0.000, 'today' 0.000, '今天的' 0.000
+   9  ' today'                 '?' (1.0000)                         '?\n' 0.000, '？' 0.000, '?"' 0.000, '?</' 0.000
+  10  '?'                      '<|im_end|>' (0.8942)                ' Feel' 0.049, ' Whether' 0.026, ' Is' 0.018, ' Do' 0.006
+
+Reply: Hello! How can I assist you today?
+Passes: 10.  Each pass goes through all 36 blocks, so block crossings = 36 * 10 = 360.
+
+
+####################################################################################################
+# PROMPT: 'what is hvac'
+####################################################################################################
+Chat text sent to the model (33 pieces). Each piece is shown as  position: id = text
+  0: 151644 = '<|im_start|>'   1: 8948 = 'system'   2: 198 = '\n'   3: 2610 = 'You'   4: 525 = ' are'   5: 1207 = ' Q'   6: 16948 = 'wen'   7: 11 = ','   8: 3465 = ' created'   9: 553 = ' by'   10: 54364 = ' Alibaba'   11: 14817 = ' Cloud'   12: 13 = '.'   13: 1446 = ' You'   14: 525 = ' are'   15: 264 = ' a'   16: 10950 = ' helpful'   17: 17847 = ' assistant'   18: 13 = '.'   19: 151645 = '<|im_end|>'   20: 198 = '\n'   21: 151644 = '<|im_start|>'   22: 872 = 'user'   23: 198 = '\n'   24: 12555 = 'what'   25: 374 = ' is'   26: 22747 = ' hv'   27: 580 = 'ac'   28: 151645 = '<|im_end|>'   29: 198 = '\n'   30: 151644 = '<|im_start|>'   31: 77091 = 'assistant'   32: 198 = '\n'
+
+Step 0. Look up the rows.  x[position] = word_table[id]   (each row = 2048 numbers). We follow the LAST position (32), because its final row decides the first word of the reply.
+  x[32] = word_table[198] = [0.037964, -0.013138, -0.010223, 0.020447, -0.02774, -0.016052, ...]   size |x| = sqrt(sum of squares) = 1.2611
+
+================ BLOCK 1 of 36, worked in full for position 32 ================
+A. Scale the row (RMSNorm).   rms = sqrt(mean(x^2) + 0.000001) = 0.027884   h = x / rms * gain
+   x    = [0.037964, -0.013138, -0.010223, 0.020447, -0.02774, -0.016052, ...]
+   gain = [0.26758, 0.33984, 0.28516, 0.25977, 0.30664, 0.31055, ...]   (2048 stored numbers of this block)
+   h    = [0.36431, -0.16012, -0.10455, 0.19048, -0.30506, -0.17878, ...]
+B. query q[head 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.013023 * 0.36431) + (-0.043549 * -0.16012) + (-0.0069199 * -0.10455) + (0.035828 * 0.19048) + ...
+   bias -0.081055 + sum of all 2048 products 0.30922 = 0.22817
+B. key k[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0.0049324 * 0.36431) + (-0.034821 * -0.16012) + (-0.010971 * -0.10455) + (-0.0030193 * 0.19048) + ...
+   bias -2.9688 + sum of all 2048 products 2.4205 = -0.54823
+B. value v[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0 * 0.36431) + (0.015396 * -0.16012) + (-0.0087967 * -0.10455) + (0.016495 * 0.19048) + ...
+   bias 0.063965 + sum of all 2048 products -0.061998 = 0.0019666
+C. Mark the position (rotary).  angle = position * 1000000^(-2*0/128) = 32   cos = 0.83422  sin = 0.55143
+   q'[0] = q[0]*cos - q[64]*sin = 0.22817*0.83422 - 3.2666*0.55143 = -1.611   (the same turn is applied to every pair of numbers of every query and key)
+D. Head 1 asks: how much does position 32 care about each earlier position?   score[t] = sum(q' * k'[t]) / sqrt(128),  weight[t] = e^score[t] / sum of e^score
+   position 32 '\n': score 22.281  weight 0.41045
+   position 31 'assistant': score 21.459  weight 0.18036
+   position 29 '\n': score 20.696  weight 0.084098
+   position 30 '<|im_start|>': score 20.435  weight 0.064808
+   head 1 output = sum over t of weight[t] * v[t] = [-0.017088, 0.0058406, 0.027945, 0.091178, -0.073702, 0.0043089, ...]   (16 heads like this, then joined: 2048 numbers)
+E. Mix the heads.  attn_out[i] = sum over j of Wo[i][j] * joined[j] = [0.024447, 0.081786, 0.072605, -0.0016079, 0.016015, -0.038611, ...]   then  x_mid = x + attn_out = [0.062411, 0.068648, 0.062382, 0.018839, -0.011726, -0.054663, ...]
+F. Scale again.  rms = 0.25749   h2 = x_mid / rms * gain2 = [0.090418, 0.11976, 0.11309, 0.017505, -0.021969, -0.10863, ...]
+G. The strongest of the 11008 feed-forward neurons for this position is neuron 693.
+   gate = sum over j of Wgate[693][j] * h2[j] = (0.025116 * 0.090418) + (-0.018204 * 0.11976) + (0.025116 * 0.11309) + ... = 1.0616
+   up   = sum over j of Wup[693][j] * h2[j]   = 1.3599
+   silu(gate) = gate / (1 + e^(-gate)) = 1.0616 / (1 + e^(-1.0616)) = 0.78873
+   act = silu(gate) * up = 0.78873 * 1.3599 = 1.0726
+   Gates open (silu(gate) > 0.1): 2.7% of 11008 neurons.  Top 5 act values: n693=1.0726, n8862=-1.063, n3271=-0.87253, n11005=0.76651, n10326=0.60215
+H. Squeeze back.  ffn_out[0] = sum over n of Wdown[0][n] * act[n]  (11008 terms) ; biggest terms: n11005: -0.028702*0.76651=-0.022, n3534: 0.075684*-0.25892=-0.019596, n693: -0.01741*1.0726=-0.018674 ; total = -0.14077
+   ffn_out = [-0.14077, -0.058378, -0.051392, 0.1235, -0.06801, 0.10874, ...]   x_out = x_mid + ffn_out = [-0.078355, 0.01027, 0.010989, 0.14233, -0.079735, 0.054079, ...]   size |x_out| = 14.044
+
+   ... blocks 2 to 35 do the same steps A to H with their own stored numbers (see the table below) ...
+
+================ BLOCK 36 of 36, worked in full for position 32 ================
+A. Scale the row (RMSNorm).   rms = sqrt(mean(x^2) + 0.000001) = 8.7517   h = x / rms * gain
+   x    = [-1.9837, 0.20468, 1.4888, -2.6388, -8.1704, -0.69216, ...]
+   gain = [1.2188, 1.2109, 1.3047, 1.3359, 1.2656, 1.2969, ...]   (2048 stored numbers of this block)
+   h    = [-0.27625, 0.028321, 0.22194, -0.4028, -1.1816, -0.10257, ...]
+B. query q[head 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.022415 * -0.27625) + (0.01506 * 0.028321) + (0.025772 * 0.22194) + (0.0097046 * -0.4028) + ...
+   bias -0.85547 + sum of all 2048 products 0.36571 = -0.48976
+B. key k[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (-0.018936 * -0.27625) + (-0.00085974 * 0.028321) + (-0.0068855 * 0.22194) + (-0.00085974 * -0.4028) + ...
+   bias -1.3594 + sum of all 2048 products 1.2587 = -0.10064
+B. value v[group 1, number 0] = bias + sum over j of W[0][j] * h[j]  (2048 terms)
+   first terms: (0.091797 * -0.27625) + (0.011841 * 0.028321) + (0.053284 * 0.22194) + (0.035522 * -0.4028) + ...
+   bias 0.023682 + sum of all 2048 products -0.75587 = -0.73219
+C. Mark the position (rotary).  angle = position * 1000000^(-2*0/128) = 32   cos = 0.83422  sin = 0.55143
+   q'[0] = q[0]*cos - q[64]*sin = -0.48976*0.83422 - 0.52528*0.55143 = -0.69823   (the same turn is applied to every pair of numbers of every query and key)
+D. Head 1 asks: how much does position 32 care about each earlier position?   score[t] = sum(q' * k'[t]) / sqrt(128),  weight[t] = e^score[t] / sum of e^score
+   position 2 '\n': score 8.6094  weight 0.21707
+   position 32 '\n': score 8.5951  weight 0.21401
+   position 31 'assistant': score 8.5031  weight 0.19519
+   position 0 '<|im_start|>': score 7.8073  weight 0.097339
+   head 1 output = sum over t of weight[t] * v[t] = [-0.43977, 0.12742, 0.075345, -0.36133, 0.16086, 0.27988, ...]   (16 heads like this, then joined: 2048 numbers)
+E. Mix the heads.  attn_out[i] = sum over j of Wo[i][j] * joined[j] = [0.73885, -0.48652, -0.28882, -0.87472, 0.79492, -0.55729, ...]   then  x_mid = x + attn_out = [-1.2448, -0.28184, 1.2, -3.5135, -7.3755, -1.2495, ...]
+F. Scale again.  rms = 9.1117   h2 = x_mid / rms * gain2 = [-0.22094, -0.049539, 0.21297, -0.62358, -1.3343, -0.22283, ...]
+G. The strongest of the 11008 feed-forward neurons for this position is neuron 6312.
+   gate = sum over j of Wgate[6312][j] * h2[j] = (0.018188 * -0.22094) + (-0.016617 * -0.049539) + (-0.039825 * 0.21297) + ... = 12.995
+   up   = sum over j of Wup[6312][j] * h2[j]   = -4.1985
+   silu(gate) = gate / (1 + e^(-gate)) = 12.995 / (1 + e^(-12.995)) = 12.995
+   act = silu(gate) * up = 12.995 * -4.1985 = -54.56
+   Gates open (silu(gate) > 0.1): 9.5% of 11008 neurons.  Top 5 act values: n6312=-54.56, n3181=53.446, n4017=51.005, n1702=39.053, n2515=37.424
+H. Squeeze back.  ffn_out[0] = sum over n of Wdown[0][n] * act[n]  (11008 terms) ; biggest terms: n3181: 0.012421*53.446=0.66384, n1210: -0.013435*35.582=-0.47805, n173: 0.022186*-15.238=-0.33808 ; total = -0.36174
+   ffn_out = [-0.36174, -0.30694, -3.3968, -3.7758, -2.5587, -0.51679, ...]   x_out = x_mid + ffn_out = [-1.6066, -0.58878, -2.1969, -7.2893, -9.9342, -1.7662, ...]   size |x_out| = 247.96
+
+================ ALL 36 BLOCKS, position 32 (sizes of the running row) ================
+block   |x in|    attention changed the row by   feed-forward changed it by   |x out|    gates open
+    1       1.26        925.0 %                        43.6 %                  14.04      2.7 %
+    2      14.04         64.2 %                        15.4 %                  18.46      0.0 %
+    3      18.46         36.0 %                        26.0 %                  19.82      0.0 %
+    4      19.82         23.6 %                        28.7 %                  20.47      0.0 %
+    5      20.47         34.2 %                        26.6 %                  22.59      0.0 %
+    6      22.59         30.2 %                        34.9 %                  25.25      0.2 %
+    7      25.25         31.4 %                        42.8 %                  28.25      0.2 %
+    8      28.25         37.2 %                        42.6 %                  32.00      0.2 %
+    9      32.00         34.5 %                        43.3 %                  37.56      0.4 %
+   10      37.56         21.4 %                        44.9 %                  40.70      0.7 %
+   11      40.70         30.5 %                        36.2 %                  40.71      1.9 %
+   12      40.71         21.3 %                        43.5 %                  39.93      6.6 %
+   13      39.93         35.1 %                        45.3 %                  45.53      5.0 %
+   14      45.53         15.6 %                        48.0 %                  49.38      9.8 %
+   15      49.38         20.8 %                        45.9 %                  49.95     10.3 %
+   16      49.95         24.0 %                        38.1 %                  49.98     11.2 %
+   17      49.98         22.0 %                        36.8 %                  56.63     11.2 %
+   18      56.63         22.2 %                        32.7 %                  56.50     13.5 %
+   19      56.50         25.5 %                        39.6 %                  61.33     12.4 %
+   20      61.33         14.0 %                        27.3 %                  59.63     13.1 %
+   21      59.63         18.1 %                        36.3 %                  63.49     13.2 %
+   22      63.49         19.6 %                        34.0 %                  72.07     14.8 %
+   23      72.07         14.2 %                        32.3 %                  75.23     15.4 %
+   24      75.23         22.0 %                        36.0 %                  74.18     17.8 %
+   25      74.18         23.4 %                        33.2 %                  79.09     19.7 %
+   26      79.09         13.1 %                        37.8 %                  86.25     19.4 %
+   27      86.25         16.3 %                        36.2 %                  94.40     19.8 %
+   28      94.40         26.6 %                        41.9 %                 110.97     18.7 %
+   29     110.97         12.3 %                        31.1 %                 118.71     15.6 %
+   30     118.71         13.3 %                        36.7 %                 128.31     15.9 %
+   31     128.31         13.0 %                        52.6 %                 166.26     19.8 %
+   32     166.26         30.7 %                        51.6 %                 209.58     14.9 %
+   33     209.58         18.8 %                        41.7 %                 272.71     14.4 %
+   34     272.71         17.3 %                        29.2 %                 334.41     22.6 %
+   35     334.41         12.9 %                        26.0 %                 396.06     23.6 %
+   36     396.06          7.4 %                        90.2 %                 247.96      9.5 %
+
+================ THE LAST STEP: choose the first word ================
+Scale the final row.  rms = sqrt(mean(x^2) + 0.000001) = 5.4793   xn = x / rms * final_gain = [-0.89795, -0.3358, -1.2655, -4.1781, -5.6375, -0.9872, ...]
+Score every one of the 151936 pieces with the SAME word table:  score[piece] = sum over i of word_table[piece][i] * xn[i]   (2048 terms each)
+Turn scores into chances:  chance[piece] = e^(score - best) / sum over all 151936 pieces of e^(score - best)
+   piece 39 'H': first terms -0.0091934*-0.89795 + -0.014297*-0.3358 + ... = score 33.281   chance 0.7224
+   piece 78196 'HV': first terms -0.057312*-0.89795 + 0.050171*-0.3358 + ... = score 32.296   chance 0.2697
+   piece 45539 '"H': first terms -0.039673*-0.89795 + -0.023804*-0.3358 + ... = score 28.49   chance 0.0060
+   piece 785 'The': first terms 0.02034*-0.89795 + -0.0081329*-0.3358 + ... = score 26.134   chance 0.0006
+   piece 1 '"': first terms 0.011681*-0.89795 + 0.014603*-0.3358 + ... = score 25.929   chance 0.0005
+The best piece is chosen: 'H'.  Total over all pieces of e^(score - best) = 1.3843
+
+
+================ THE WHOLE REPLY, pass by pass ================
+pass  piece fed in            best next piece (chance)      next 4 best
+   1  <whole prompt, 33 pieces> 'H' (0.7224)                        'HV' 0.270, '"H' 0.006, 'The' 0.001, '"' 0.001
+   2  'H'                      'vac' (0.9855)                       'v' 0.005, 'VA' 0.003, 'VC' 0.002, 'VV' 0.001
+   3  'vac'                    ' stands' (0.8691)                   ' is' 0.078, ',' 0.023, ' typically' 0.017, ' refers' 0.011
+   4  ' stands'                ' for' (1.0000)                      ' as' 0.000, ' primarily' 0.000, ' specifically' 0.000, ' initially' 0.000
+   5  ' for'                   ' Heating' (0.9360)                  ' "' 0.049, ' heating' 0.010, ' HVAC' 0.003, ' **' 0.001
+   6  ' Heating'               ',' (0.9999)                         ' Vent' 0.000, ',V' 0.000, ' and' 0.000, '.' 0.000
+   7  ','                      ' Vent' (0.9997)                     ' ventilation' 0.000, '通风' 0.000, 'Vent' 0.000, ' ventil' 0.000
+   8  ' Vent'                  'ilation' (0.9890)                   'il' 0.011, 'ing' 0.000, 'iliation' 0.000, 'illation' 0.000
+   9  'ilation'                ',' (0.9999)                         ' and' 0.000, ' &' 0.000, ' Air' 0.000, ',and' 0.000
+  10  ','                      ' and' (1.0000)                      ' Air' 0.000, ' And' 0.000, ' &' 0.000, ' AND' 0.000
+  11  ' and'                   ' Air' (0.9999)                      ' Cooling' 0.000, 'Air' 0.000, ' AC' 0.000, ' air' 0.000
+  12  ' Air'                   ' Conditioning' (0.9998)             ' conditioning' 0.000, '-' 0.000, ' Condition' 0.000, '-condition' 0.000
+  13  ' Conditioning'          '.' (0.9911)                         ',' 0.005, ' (' 0.002, ' systems' 0.002, '.\n\n' 0.000
+  14  '.'                      ' It' (0.7830)                       ' This' 0.174, ' These' 0.019, ' HVAC' 0.011, ' \n\n' 0.005
+  15  ' It'                    ' is' (0.8066)                       "'s" 0.102, ' refers' 0.089, ' encompasses' 0.001, '’s' 0.000
+  16  ' is'                    ' a' (0.9841)                        ' the' 0.007, ' an' 0.007, ' crucial' 0.000, ' used' 0.000
+  17  ' a'                     ' system' (0.9354)                   ' set' 0.016, ' comprehensive' 0.008, ' collective' 0.008, ' critical' 0.007
+  18  ' system'                ' used' (0.4240)                     ' designed' 0.292, ' that' 0.128, ' of' 0.098, ' or' 0.022
+  19  ' used'                  ' in' (0.5314)                       ' to' 0.424, ' for' 0.042, ' primarily' 0.001, ' within' 0.001
+  20  ' in'                    ' buildings' (0.9723)                ' homes' 0.013, ' residential' 0.010, ' building' 0.001, ' various' 0.001
+  21  ' buildings'             ' and' (0.6552)                      ' to' 0.272, ' for' 0.035, ',' 0.013, ' that' 0.011
+  22  ' and'                   ' homes' (0.3863)                    ' other' 0.199, ' structures' 0.132, ' houses' 0.089, ' residences' 0.070
+  23  ' homes'                 ' to' (0.8682)                       ' for' 0.093, ' that' 0.021, ' designed' 0.016, ' primarily' 0.001
+  24  ' to'                    ' control' (0.4868)                  ' regulate' 0.394, ' manage' 0.063, ' maintain' 0.033, ' provide' 0.013
+  25  ' control'               ' the' (0.5343)                      ' temperature' 0.436, ' and' 0.012, ' air' 0.005, ' indoor' 0.004
+  26  ' the'                   ' temperature' (0.8554)              ' environmental' 0.041, ' environment' 0.034, ' climate' 0.031, ' air' 0.013
+  27  ' temperature'           ',' (0.9518)                         ' and' 0.047, ' (' 0.001, ' of' 0.000, ' by' 0.000
+  28  ','                      ' humidity' (0.8364)                 ' air' 0.106, ' moisture' 0.009, ' maintain' 0.007, '湿度' 0.005
+  29  ' humidity'              ',' (0.9974)                         ' and' 0.002, ' levels' 0.000, ' level' 0.000, ' indoors' 0.000
+  30  ','                      ' and' (0.9995)                      ' air' 0.000, ' as' 0.000, ' quality' 0.000, ' lighting' 0.000
+  31  ' and'                   ' air' (0.5722)                      ' quality' 0.131, ' overall' 0.116, ' the' 0.061, ' airflow' 0.053
+  32  ' air'                   ' quality' (0.9790)                  ' circulation' 0.006, ' flow' 0.005, ' purity' 0.004, ' cleanliness' 0.003
+  33  ' quality'               '.' (0.6479)                         ' of' 0.141, ' to' 0.063, ' by' 0.040, ' inside' 0.021
+  34  '.'                      ' HVAC' (0.3593)                     ' H' 0.181, ' The' 0.159, ' This' 0.107, ' \n\n' 0.042
+  35  ' HVAC'                  ' systems' (0.9995)                  ' is' 0.000, ' technology' 0.000, ' system' 0.000, ' technologies' 0.000
+  36  ' systems'               ' help' (0.3223)                     ' can' 0.290, ' are' 0.209, ' work' 0.047, ' typically' 0.026
+  37  ' help'                  ' maintain' (0.4224)                 ' to' 0.223, ' regulate' 0.165, ' in' 0.096, ' ensure' 0.040
+  38  ' maintain'              ' comfortable' (0.5098)              ' a' 0.399, ' comfort' 0.022, ' an' 0.015, ' optimal' 0.013
+  39  ' comfortable'           ' indoor' (0.3203)                   ' conditions' 0.259, ' and' 0.201, ' living' 0.149, ' environmental' 0.035
+  40  ' indoor'                ' environments' (0.4747)             ' conditions' 0.309, ' environmental' 0.109, ' climates' 0.040, ' air' 0.030
+  41  ' environments'          ' by' (0.8510)                       ' and' 0.057, ',' 0.024, ' during' 0.019, ' year' 0.018
+
+Reply: Hvac stands for Heating, Ventilation, and Air Conditioning. It is a system used in buildings and homes to control the temperature, humidity, and air quality. HVAC systems help maintain comfortable indoor environments by
+Passes: 41.  Each pass goes through all 36 blocks, so block crossings = 36 * 41 = 1476.

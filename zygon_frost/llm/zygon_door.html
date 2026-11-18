@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZYGON</title>
+<style>
+:root{--ink:#1c2b30;--mute:#7a8c92;--line:#e4eaec;--bg:#f4f8f9;--a:#0A6C80}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;font:15px/1.45 system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);overflow:hidden}
+header{display:flex;gap:10px;align-items:center;padding:10px 18px;background:#fff;border-bottom:1px solid var(--line)}header b{font-size:17px;color:var(--a)}header span{flex:1;color:var(--mute);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+select,button,input{font:inherit}select{max-width:200px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;background:#fff}
+button{border:0;background:var(--a);color:#fff;border-radius:10px;padding:8px 16px;cursor:pointer}button.s{background:#fff;color:var(--ink);border:1px solid var(--line);padding:5px 12px}
+main{flex:1;overflow:hidden;display:flex;gap:16px;padding:16px 18px;min-height:0}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+#sheet{width:300px;overflow:hidden}#sheet h4{margin:0 0 8px;font-size:12px;letter-spacing:.5px;color:var(--mute);text-transform:uppercase}
+.row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}.row span:first-child{color:var(--mute)}.row b{font-weight:600}.row.on{color:var(--a)}
+#show{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px}
+#q{font-size:18px;font-weight:600}#you{color:var(--mute);font-size:13px}
+table{border-collapse:collapse;width:100%}td{padding:6px 4px;border-bottom:1px solid var(--line)}td:last-child{text-align:right;font-weight:600}tr.big td{font-size:18px;color:var(--a);border-bottom:0}
+form{display:flex;gap:8px;padding:12px 18px;background:#fff;border-top:1px solid var(--line)}input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px}input:focus{outline:2px solid #bfe0e7}
+.hint{color:var(--mute);font-size:13px}.chip{display:inline-block;margin:4px 6px 0 0;padding:5px 10px;border:1px solid var(--line);border-radius:14px;cursor:pointer;background:#fff;font-size:13px}
+@media(max-width:700px){main{flex-direction:column}#sheet{width:auto}}
+</style></head><body>
+<header><b>ZYGON</b><span id="title">New chat</span><select id="chats"><option value="">Earlier chats</option></select><button class="s" id="new">New chat</button></header>
+<main><div id="sheet" class="card" style="display:none"><h4>What I have noted</h4><div id="rows"></div></div>
+<div id="show" class="card"><div id="you"></div><div id="q">What do you need today?</div><div id="out"><p class="hint">Try one of these, or ask anything.</p>
+<span class="chip">I want a service invoice</span><span class="chip">Design a warehouse</span><span class="chip">Size an HVAC system</span><span class="chip">Why is my AC not cooling?</span></div></div></main>
+<form id="f"><input id="t" placeholder="Type here. To fix something, say it again, e.g. hours 12." autocomplete="off"><button>Send</button></form>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+let chat = localStorage.getItem('zygon_chat') || ('c' + Date.now()); localStorage.setItem('zygon_chat', chat);
+const post = b => fetch('/api/say', {method: 'POST', body: JSON.stringify({chat, ...b})}).then(r => r.json());
+function draw(v, you) {
+  $('#title').textContent = v.title || 'New chat'; $('#you').textContent = you ? 'You: ' + you : ''; const sh = $('#sheet'); sh.style.display = v.job ? '' : 'none';
+  let first = true; $('#rows').innerHTML = (v.sheet || []).map(s => { const on = !s.value && first; if (!s.value) first = false; return `<div class="row${on ? ' on' : ''}"><span>${esc(s.label)}</span><b>${esc(s.value || '-')}</b></div>`; }).join('');
+  if (v.rows) { $('#q').textContent = 'Result'; $('#out').innerHTML = '<table>' + v.rows.map((r, i) => `<tr class="${i === v.rows.length - 1 || /TOTAL|POSITIONS/.test(r[0]) ? 'big' : ''}"><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('') + '</table><p class="hint">Change any item by saying it again, for example "hours 12".</p>'; }
+  else if (v.ask) { $('#q').textContent = v.ask; $('#out').innerHTML = ''; }
+  else if (v.text) { $('#q').textContent = v.text; $('#out').innerHTML = ''; }
+}
+async function send(text) { const v = await post({text}); draw(v, text); lists(); }
+$('#f').onsubmit = e => { e.preventDefault(); const t = $('#t').value; $('#t').value = ''; send(t); };
+document.addEventListener('click', e => { if (e.target.classList.contains('chip')) send(e.target.textContent); });
+$('#new').onclick = () => { chat = 'c' + Date.now(); localStorage.setItem('zygon_chat', chat); location.reload(); };
+async function lists() { const a = await (await fetch('/api/chats')).json(); $('#chats').innerHTML = '<option value="">Earlier chats</option>' + a.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join(''); }
+$('#chats').onchange = async e => { if (!e.target.value) return; chat = e.target.value; localStorage.setItem('zygon_chat', chat); draw(await (await fetch('/api/open?id=' + chat)).json()); };
+(async () => { lists(); const v = await (await fetch('/api/open?id=' + chat)).json(); if (v.id) draw(v); })();
+</script></body></html>

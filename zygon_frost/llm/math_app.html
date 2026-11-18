@@ -1,0 +1,92 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frost Math</title>
+<style>
+:root{--ink:#1c2b30;--mute:#6b7d83;--line:#e1e8ea;--acc:#0A6C80;--bg:#f6f9fa;--ok:#1f7a4d;--bad:#b3261e}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#fff}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line)}header b{font-size:16px}
+.tabs{display:flex;gap:4px}.tabs button{border:0;background:none;font:inherit;padding:6px 12px;border-radius:8px;cursor:pointer;color:var(--mute)}.tabs button.on{background:#dcecef;color:var(--acc);font-weight:600}
+#stat{margin-left:auto;color:var(--mute);font-size:12px}
+main{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 54px)}
+aside{border-right:1px solid var(--line);background:var(--bg);padding:14px;overflow-y:auto;max-height:calc(100vh - 54px)}
+section{padding:20px 28px;max-width:860px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}input:focus,select:focus{outline:2px solid #bfe0e7;border-color:var(--acc)}
+aside input,aside select{width:100%;margin-bottom:8px}
+.item{padding:7px 9px;border-radius:8px;cursor:pointer}.item:hover{background:#e6eff1}.item.on{background:#dcecef}.item small{display:block;color:var(--mute);word-break:break-all}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer}.btn:hover{background:#08596a}.ghost{background:none;color:var(--acc);border:1px solid var(--line)}
+.eq{font:15px ui-monospace,Consolas,monospace;background:var(--bg);padding:10px 12px;border-radius:8px;margin:8px 0 16px;overflow-x:auto}
+table{border-collapse:collapse;width:100%}td{padding:5px 8px 5px 0;vertical-align:middle}td.v{width:110px;font:14px ui-monospace,Consolas,monospace}td input[type=text]{width:100%}
+.ans{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:18px}.ans .big{font-size:26px;font-weight:600}.ans .sub{color:var(--mute);font:12.5px ui-monospace,Consolas,monospace;word-break:break-all}
+.step{border-left:3px solid var(--line);padding:2px 0 2px 12px;margin:12px 0}.step .t{font-weight:600}.step code{display:block;font:13px ui-monospace,Consolas,monospace;color:#2b3f45;word-break:break-all}
+.pass{color:var(--ok)}.fail{color:var(--bad)}.warn{background:#fff7e0;border:1px solid #f0dca0;border-radius:8px;padding:8px 10px;margin:8px 0}.err{background:#fdecea;border:1px solid #f3c1bc;border-radius:8px;padding:8px 10px;margin:8px 0}
+.muted{color:var(--mute)}.row{display:flex;gap:8px;margin-bottom:6px}.row input:first-child{width:170px}.row input:nth-child(2){flex:1}
+@media(max-width:760px){main{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<header><b>Frost Math</b><div class="tabs"><button id="t1" class="on">One formula</button><button id="t2">Several formulas</button></div><div id="stat"></div></header>
+<main>
+<aside id="side"><input id="q" placeholder="Find a formula, e.g. beam deflection"><select id="area"><option value="">All areas</option></select><div id="list"></div></aside>
+<section id="one"><div id="pick" class="muted">Pick a formula on the left.</div></section>
+<section id="many" style="display:none">
+ <p class="muted" style="margin-top:0">Type what you know, and what you want. Frost Math finds the formulas that connect them and shows each step.</p>
+ <div id="knowns"></div><button class="btn ghost" id="addrow">Add a value</button>
+ <p><b>I want to find</b> <input id="target" list="vars" placeholder="variable name" style="width:200px"> <button class="btn" id="go2">Find the route and calculate</button></p>
+ <datalist id="vars"></datalist><div id="out2"></div>
+</section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, body) => fetch(p, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {}).then(r => r.json());
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+let cur = null, last = null;
+$('#t1').onclick = () => tab(1); $('#t2').onclick = () => tab(2);
+function tab(n) { $('#t1').classList.toggle('on', n == 1); $('#t2').classList.toggle('on', n == 2); $('#one').style.display = n == 1 ? '' : 'none'; $('#many').style.display = n == 2 ? '' : 'none'; $('#side').style.display = n == 1 ? '' : 'none'; document.querySelector('main').style.gridTemplateColumns = n == 1 ? '' : '1fr'; }
+(async () => {
+  const s = await api('/api/status'); $('#stat').textContent = `${s.formulas} formulas · ${s.domains} areas · ` + (s.copy_unchanged ? 'source copy unchanged' : 'SOURCE COPY CHANGED');
+  const d = await api('/api/domains'); window.DOM = d; window.TT = await api('/api/titles');
+  for (const k of Object.keys(d)) $('#area').insertAdjacentHTML('beforeend', `<option>${k}</option>`);
+  const v = await api('/api/vars'); $('#vars').innerHTML = v.map(x => `<option value="${x}">`).join('');
+  show(); addRow(); addRow();
+})();
+$('#q').oninput = show; $('#area').onchange = show;
+async function show() {
+  const q = $('#q').value.trim(), a = $('#area').value; let items = [];
+  if (q) items = (await api('/api/find?q=' + encodeURIComponent(q))).filter(x => !a || x.domain == a);
+  else items = Object.entries(window.DOM).filter(([k]) => !a || k == a).flatMap(([k, v]) => v.map(n => ({name: n, domain: k})));
+  $('#list').innerHTML = items.slice(0, 120).map(x => `<div class="item" data-n="${x.name}">${esc(x.title || (window.TT && window.TT[x.name]) || x.name.replace(/_/g, ' '))}<small>${x.equation ? esc(x.equation) : x.domain.replace(/_/g, ' ')}</small></div>`).join('') || '<div class="muted">Nothing matches.</div>';
+  document.querySelectorAll('.item').forEach(e => e.onclick = () => open(e.dataset.n));
+}
+async function open(name) {
+  cur = await api('/api/formula?name=' + name); document.querySelectorAll('.item').forEach(e => e.classList.toggle('on', e.dataset.n == name));
+  const unk = cur.output;
+  $('#one').innerHTML = `<h2 style="margin:0 0 2px">${esc(cur.title)}</h2><div class="muted">${esc(name)} · ${cur.domain.replace(/_/g, ' ')} · source: ${esc(cur.source)}</div><div class="eq">${esc(cur.equation)}</div>
+  <p class="muted" style="margin:0 0 6px">Fill every box except the one you want to find. The "find" button marks the unknown.</p>
+  <table>${cur.vars.map(v => `<tr><td class="v">${v}<div class="muted" style="font:12px system-ui,sans-serif">${esc((cur.var_labels || {})[v] || '')}</div></td><td><input type="text" id="v_${v}" placeholder="number, or like 5 ft" autocomplete="off"></td><td class="muted" style="white-space:nowrap">${cur.units && cur.units[v] && cur.units[v].label ? esc(cur.units[v].label) : '<span title="No unit recorded yet: type a plain number">unit ?</span>'}</td><td><label><input type="radio" name="tg" value="${v}" ${v == unk ? 'checked' : ''}> find</label></td><td>${cur.constants[v] ? `<a href="#" class="cst" data-v="${v}" data-x="${cur.constants[v].value}" title="${esc(cur.constants[v].why)}">use ${cur.constants[v].value}</a>` : ''}</td></tr>`).join('')}</table>
+  <p><button class="btn" id="calc">Calculate</button></p><div id="res"></div>`;
+  document.querySelectorAll('.cst').forEach(a => a.onclick = e => { e.preventDefault(); $('#v_' + a.dataset.v).value = a.dataset.x; });
+  document.querySelectorAll('input[name=tg]').forEach(r => r.onchange = () => cur.vars.forEach(v => $('#v_' + v).disabled = (v == r.value)));
+  cur.vars.forEach(v => $('#v_' + v).disabled = (v == unk)); $('#calc').onclick = () => calc(); $('#one').onkeydown = e => { if (e.key == 'Enter') calc(); };
+}
+async function calc(choice) {
+  const t = document.querySelector('input[name=tg]:checked').value, vals = {}; cur.vars.forEach(v => { if (v != t) vals[v] = $('#v_' + v).value });
+  last = await api('/api/solve_one', {name: cur.name, values: vals, target: t, choice: choice}); render($('#res'), last, t, () => calc);
+}
+function steps(tr) { return tr.map((s, i) => `<div class="step"><div class="t">${tr.length > 1 ? 'Step ' + (i + 1) + ': ' : ''}${s.formula.replace(/_/g, ' ')} <span class="muted">(${s.domain.replace(/_/g, ' ')})</span></div>
+  <code>${esc(s.equation)}</code>${s.rearranged ? `<code>solved for ${s.solving_for}: ${esc(s.rearranged)}</code>` : ''}<code>values: ${Object.entries(s.values).map(([k, v]) => k + ' = ' + v + (s.units && s.units[k] ? ' ' + s.units[k] : '')).join(', ')}</code>${(s.unit_notes || []).map(n => `<div class="muted" style="font-size:12px">converted: ${esc(n)}</div>`).join('')}<code>put in: ${esc(s.substituted)}</code>
+  ${s.exact ? `<code>${s.solving_for} = ${esc(s.exact)} = ${esc(s.decimal)}</code>` : ''}${s.method ? `<div class="warn">${esc(s.method)}</div>` : ''}${s.repeats ? `<div class="warn">${esc(s.repeats)}</div>` : ''}
+  ${s.check ? `<div class="${s.check.passed ? 'pass' : 'fail'}">${s.check.passed ? '✓' : '✗'} check: put back into the formula, ${esc(s.check.put_back)} (relative error ${esc(s.check.relative_error)})</div>` : ''}<div class="muted" style="font-size:12px">source: ${esc(s.source)}</div></div>`).join(''); }
+function render(el, r, t, again) {
+  if (r.choice) { el.innerHTML = `<div class="warn">${esc(r.message)}</div>` + r.options.map((o, i) => `<p><button class="btn ghost pick" data-i="${i}">${t} = ${esc(o.decimal)}</button> <span class="muted">${esc(o.exact)}</span></p>`).join('') + steps(r.trace);
+    el.querySelectorAll('.pick').forEach(b => b.onclick = () => again()(+b.dataset.i)); return; }
+  if (!r.ok && !r.value) { el.innerHTML = `<div class="err">${esc(r.error || 'could not calculate')}${r.missing ? '<br>Still needed: ' + r.missing.join(', ') : ''}</div>` + (r.closest ? '<div class="muted">The closest formulas, and what they also need:</div>' + r.closest.map(c => `<div class="step"><div class="t">${c.formula.replace(/_/g, ' ')}</div><code>${esc(c.equation)}</code><div>also needs: <b>${c.also_need.join(', ') || 'nothing more'}</b></div></div>`).join('') : '') + (r.trace ? steps(r.trace) : ''); return; }
+  el.innerHTML = `<div class="ans"><div class="muted">${t}</div><div class="big">${esc(r.value.decimal)} <span style="font-size:16px;font-weight:400">${esc(r.value.unit || '')}</span></div><div class="sub">exact: ${esc(r.value.exact)}</div>${r.also_in && r.also_in.length > 1 ? '<div class="muted" style="margin-top:6px">also: ' + r.also_in.slice(1).map(a => esc(a.value) + ' ' + esc(a.unit)).join(' · ') + '</div>' : ''}${r.ok ? '<div class="pass">✓ every step was put back into its formula and balanced</div>' : '<div class="err">a check did not pass: do not use this number</div>'}
+  ${r.crosses_areas ? '<div class="warn">This route moves between areas. The formulas are linked only by variable names, so read each step.</div>' : ''}</div><h3>The working</h3>${steps(r.trace)}${r.formulas_used && r.other_formulas_with_this_variable && r.other_formulas_with_this_variable.length ? `<div class="muted">Other formulas that give ${t}: ${r.other_formulas_with_this_variable.map(x => x.name.replace(/_/g, ' ')).join(', ')}</div>` : ''}
+  <p><button class="btn ghost" id="cp">Copy the working</button></p>`; $('#cp') && ($('#cp').onclick = () => navigator.clipboard.writeText(el.innerText));
+}
+function addRow() { $('#knowns').insertAdjacentHTML('beforeend', '<div class="row"><input list="vars" placeholder="variable"><input type="text" placeholder="value"></div>'); }
+$('#addrow').onclick = addRow;
+$('#go2').onclick = async () => run2();
+async function run2(choices) {
+  const vals = {}; document.querySelectorAll('#knowns .row').forEach(r => { const [a, b] = r.querySelectorAll('input'); if (a.value.trim() && b.value.trim()) vals[a.value.trim()] = b.value.trim(); });
+  const t = $('#target').value.trim(); if (!t) { $('#out2').innerHTML = '<div class="err">Type the variable you want to find.</div>'; return; }
+  window.ch = choices || window.ch || {}; const r = await api('/api/solve_chain', {values: vals, target: t, choices: window.ch});
+  render($('#out2'), r, t, () => i => { window.ch[r.choose_for] = i; run2(window.ch); });
+}
+</script></body></html>

@@ -1,0 +1,44 @@
+ZYGON: end-to-end test for an HVAC engineer
+============================================
+Start: dashboard http://localhost:8800 -> start "ZYGON chat" (and "Frost Lang" for repair questions). Open http://localhost:8890.
+The screen never scrolls. It shows the latest question or result, with the sheet of noted values on the left.
+To fix any value: say it again ("hours 12"). To abandon a job: type "cancel".
+
+1. SERVICE INVOICE (exact money maths)
+   Type: I want a service invoice
+   Answer the questions in order:
+     systems 3 | price of one system 1200 | hours 40 | rate 85
+     materials, one line each:  copper pipe 10 4.5   then   refrigerant 2 60   then Enter on an empty line
+     travel 150 | discount 5 | tax 8
+   Expect: equipment 3,600.00 | labour 3,400.00 | materials 165.00 | travel 150.00 | subtotal 7,315.00 | discount -365.75 | tax 555.94 | TOTAL DUE 7,505.19
+   Then type: hours 12     Expect: labour 1,020.00, subtotal 4,935.00, discount -246.75, tax 375.06, TOTAL DUE 5,063.31; the old value is kept in the hidden log.
+
+2. HVAC SIZING
+   Type: size an air conditioner for 48000 btu
+   Press Enter for the default dT 20.
+   Expect: 4 tons | 2,222.22 CFM | 14,068 W (sensible heat, standard air, stated as an assumption).
+
+3. WAREHOUSE LAYOUT
+   Type: design a warehouse    Answers: 60, 40, 9, Enter, Enter, Enter, Enter (defaults: pallet 1.2 x 1.0, level 1.8 m, aisles 35%)
+   Expect: area 2,400 m2 | 4 levels | 1,300 pallets per level | 5,200 pallet positions.
+
+4. A FORMULA FROM THE 333 (exact, with put-back check)
+   Type: current through a resistor     Answers: 2 A, 5 ohm      Expect: V = 10 V, put-back check passed.
+   Type: electrical power from voltage and current    Give 230 V and 10 A   Expect: 2300 W.
+   Units are accepted: "12 kW" is read as 12000 W.
+
+5. ENGG HAND-OFF
+   Type: measure the cylinder in this point cloud    Expect: a pointer to Frost Engg (http://localhost:8870) for the scan itself.
+
+6. REPAIR AND GENERAL QUESTIONS (Frost Lang)
+   Type: my furnace keeps tripping the breaker    /    why is my AC not cooling
+   KNOWN GAP: Lang has no HVAC repair lessons yet. Expect an honest "I do not know that yet" or a weak answer. Teach lessons next.
+
+7. MEMORY
+   Click "New chat", do job 2, then pick the first chat in "Earlier chats". Expect it to reopen with the same sheet and result.
+
+8. WRONG ROUTE TEST (the router)
+   Try 10 of your own phrasings of jobs 1-5 (site shorthand, typos). Write down every question that goes to the wrong place and what you expected.
+   Reported accuracy so far: 79% to 83% on 47 questions written by the builder, not independent. Your list is the first honest score.
+
+WHAT TO RECORD FOR EACH STEP: the exact words typed, what came back, right or wrong, and the time it took.

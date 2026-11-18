@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frost Lang: how it learns</title>
+<style>
+:root{--bg:#fff;--ink:#14272b;--mute:#5d7378;--line:#d5e3e6;--acc:#0f7f8f;--soft:#eef6f7}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a1d;--ink:#e3eef0;--mute:#8aa3a8;--line:#27393d;--acc:#4fc3d3;--soft:#162428}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,sans-serif}
+main{max-width:860px;margin:0 auto;padding:22px 16px}
+h1{font-size:22px;margin:0}h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin:18px 0 6px}
+.sub{color:var(--mute);margin:2px 0 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.box{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+code,.f{font-family:Consolas,monospace;font-size:13px}.f{display:block;margin:3px 0}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid var(--line);padding:3px 6px;text-align:left}th{color:var(--mute);font-weight:600}
+svg text{fill:var(--ink);font:12px system-ui}svg .b{fill:var(--soft);stroke:var(--line)}svg .a{stroke:var(--acc);fill:none;stroke-width:1.5}
+.note{color:var(--mute);font-size:12.5px;margin-top:10px}
+@media print{main{padding:0}body{font-size:11.5px}}
+</style></head><body><main>
+<h1>Frost Lang</h1><p class="sub">A sentence memory that answers with the sentence it has seen. No training loop, no weights. One pass over the text.</p>
+
+<h2>1 &nbsp;Learning one sentence</h2>
+<div class="grid">
+<div class="box"><b>Input</b> &nbsp;"The cat sat on the mat."
+<table style="margin-top:6px"><tr><th>step</th><th>stored</th></tr>
+<tr><td>split text at . ? !</td><td>sentence <code>s<sub>17</sub></code></td></tr>
+<tr><td>lower-case, cut into words</td><td>the, cat, sat, on, the, mat</td></tr>
+<tr><td>word &rarr; sentences</td><td><code>cat: [17]</code> <code>mat: [17]</code> &hellip;</td></tr>
+<tr><td>count</td><td><code>df(cat) += 1</code>, <code>N += 1</code></td></tr></table></div>
+<div class="box"><b>Lesson</b> (a question set with its answer)
+<table style="margin-top:6px"><tr><th>stored</th><th>as</th></tr>
+<tr><td>each way to ask it</td><td>word set <code>W<sub>k</sub></code></td></tr>
+<tr><td>the answers</td><td>list <code>R</code></td></tr>
+<tr><td>word &rarr; lessons</td><td><code>g[w] = {lesson ids}</code></td></tr></table>
+<div class="note">Cost: ~8 B per posting. Book of 15,113 words: 6.5 s, 568 sentences.</div></div>
+</div>
+
+<h2>2 &nbsp;Formulas</h2>
+<div class="grid">
+<div class="box"><b>Word weight</b><span class="f">idf(w) = ln( (N + 1) / (df(w) + 0.5) )</span>
+<b>Content word</b><span class="f">df(w) &le; 0.08 &middot; N</span>
+<b>Sentence answer</b> (query words <code>Q</code>, sentence words <code>S</code>)
+<span class="f">cover = &Sigma;<sub>w&isin;Q&cap;S</sub> idf(w) / &Sigma;<sub>w&isin;Q</sub> idf(w)</span>
+<span class="f">score = cover &minus; 0.012&middot;|S| + 0.05&middot;[ends with . ? !] + 0.04&middot;[word is early]</span></div>
+<div class="box"><b>Lesson answer</b>
+<span class="f">cov = &Sigma; idf(W&cap;Q) / &Sigma; idf(W)</span>
+<span class="f">prec = &Sigma; idf(W&cap;Q) / &Sigma; idf(Q)</span>
+<span class="f">score = cov &middot; (0.5 + 0.5&middot;prec) &nbsp; if cov &ge; 0.75</span>
+<b>Typo repair</b>
+<span class="f">word &notin; vocabulary &rarr; nearest by edit distance</span>
+<b>Single word</b><span class="f">shortest complete sentence containing it</span></div>
+</div>
+
+<h2>3 &nbsp;Where a reply stops: the directional gate</h2>
+<div class="box">The best sentence <code>a</code> is the anchor. Walk forward along the book's path, one sentence <code>j = 1, 2, &hellip;</code> at a time:
+<span class="f">g<sub>j</sub> = e<sup>&minus;(j&minus;1)/&tau;</sup> &middot; ( max(r<sub>j</sub>, c<sub>j</sub>) + &beta; )</span>
+<span class="f">keep sentence a+j while g<sub>j</sub> &ge; &theta;, words &le; 90, and the paragraph has not ended</span>
+<code>r<sub>j</sub></code> = idf share of the typed words in it &nbsp; <code>c<sub>j</sub></code> = idf share of the anchor's rare words in it. &tau; = 1, &theta; = 0.25, &beta; = 0.4. A product of an exponential distance term and a match term: not a probability, nothing is normalised.
+<table style="margin-top:6px"><tr><th>stop rule (300 questions, 100 books, 95,747 sentences)</th><th>words</th><th>in right paragraph</th><th>F1</th></tr>
+<tr><td>one sentence</td><td>18.0</td><td>1.00</td><td>0.62</td></tr><tr><td>always two</td><td>30.7</td><td>0.91</td><td>0.75</td></tr>
+<tr><td>gate only</td><td>36.3</td><td>0.89</td><td>0.77</td></tr><tr><td>gate + paragraph end</td><td>38.6</td><td>1.00</td><td>0.92</td></tr></table></div>
+<h2>4 &nbsp;Answering anything typed</h2>
+<svg viewBox="0 0 820 118" width="100%" role="img" aria-label="reply path">
+<g><rect class="b" x="2" y="30" width="96" height="50" rx="8"/><text x="50" y="52" text-anchor="middle">Typed text</text><text x="50" y="68" text-anchor="middle">any key</text>
+<rect class="b" x="128" y="30" width="96" height="50" rx="8"/><text x="176" y="52" text-anchor="middle">Repair</text><text x="176" y="68" text-anchor="middle">typos</text>
+<rect class="b" x="254" y="30" width="96" height="50" rx="8"/><text x="302" y="52" text-anchor="middle">Saved</text><text x="302" y="68" text-anchor="middle">answers</text>
+<rect class="b" x="380" y="30" width="96" height="50" rx="8"/><text x="428" y="52" text-anchor="middle">Lessons</text><text x="428" y="68" text-anchor="middle">+ tools</text>
+<rect class="b" x="506" y="30" width="96" height="50" rx="8"/><text x="554" y="52" text-anchor="middle">Sentence</text><text x="554" y="68" text-anchor="middle">memory</text>
+<rect class="b" x="632" y="30" width="186" height="50" rx="8"/><text x="725" y="52" text-anchor="middle">Ask: where can I</text><text x="725" y="68" text-anchor="middle">learn this from?</text></g>
+<g class="a"><path d="M98 55h30M224 55h30M350 55h30M476 55h30M602 55h30"/></g>
+<text x="590" y="100" text-anchor="middle" style="fill:var(--mute)">first match wins; if none, it asks</text>
+<text x="428" y="20" text-anchor="middle" style="fill:var(--mute)">code lessons and app builder sit here</text>
+</svg>
+<p class="note">You name a source (web page, PDF, text, book number). It reads it, adds it with the steps in part 1, and answers again.</p>
+
+<h2>5 &nbsp;Measured</h2>
+<table><tr><th>test</th><th>result</th></tr>
+<tr><td>323 inputs (words, typos, symbols, digits, emoji, nonsense)</td><td>323 replies; 0 blank. 36 were "where can I learn it from?"</td></tr>
+<tr><td>Typos in book words (60)</td><td>58 answered from the book</td></tr>
+<tr><td>500 books together (8.56 M words, 425,271 sentences)</td><td>learned in 20.9 s (24.6 s with reading files); memory about 120 MB</td></tr>
+<tr><td>Frost Code: 32 Python lessons run</td><td>32 matched expected output, 0 failed</td></tr>
+<tr><td>Frost Code: 24 differently worded requests</td><td>16 found the right lesson</td></tr>
+<tr><td>Web app builds (to-do, notes, calculator)</td><td>3 of 3 served; all under 10 MB (about 4.5 KB)</td></tr></table>
+<p class="note">Limit: it repeats what it has read. It does not reason or write new sentences. Reply quality depends on what was read.</p>
+</main></body></html>

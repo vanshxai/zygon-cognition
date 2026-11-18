@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inside Frost 1.0: one question, every matrix</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1d1b;--mute:#6b6a64;--line:#e2e0d8;--acc:#c2410c;--pos:#c2410c;--neg:#1d4ed8;--code:#f1efe8}
+@media(prefers-color-scheme:dark){:root{--bg:#161614;--card:#1f1f1c;--ink:#ecebe5;--mute:#9a988f;--line:#34332e;--acc:#fb923c;--code:#292823}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,Segoe UI,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:26px;margin:8px 0 2px}h2{font-size:18px;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:14px 0}
+.step{display:inline-block;background:var(--acc);color:#fff;border-radius:99px;font-size:12px;font-weight:600;padding:1px 9px;margin-right:8px;vertical-align:2px}
+.why{color:var(--mute);margin:2px 0 10px}
+.mac{float:right;font-size:12px;color:var(--mute);background:var(--code);border-radius:6px;padding:2px 8px}
+code,.mono{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.f{background:var(--code);border-radius:8px;padding:8px 12px;margin:8px 0;overflow-x:auto;white-space:nowrap}
+.tok{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin:2px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.tok.last{background:var(--acc);color:#fff;border-color:var(--acc)}.tok small{color:var(--mute);margin-left:4px}.tok.last small{color:#fde7d6}
+.row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.vec{margin:4px 0}.vec b{display:block;font-size:12px;color:var(--mute);font-weight:500;margin-bottom:2px}
+canvas{border:1px solid var(--line);border-radius:4px;image-rendering:pixelated;display:block}
+table{border-collapse:collapse;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+td,th{padding:2px 8px;text-align:right;border-bottom:1px solid var(--line)}th{color:var(--mute);font-weight:500}
+td.l,th.l{text-align:left}.dim{color:var(--mute)}.hl{color:var(--acc);font-weight:600}
+.ctl{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
+.ctl input[type=range]{width:min(420px,60vw);vertical-align:middle}
+.bar{display:flex;align-items:center;gap:8px;margin:1px 0;font-size:12.5px}.bar i{display:block;height:10px;background:var(--acc);border-radius:2px}
+#tip{position:fixed;pointer-events:none;background:#000d;color:#fff;font:12px ui-monospace,Consolas,monospace;padding:3px 7px;border-radius:5px;display:none;z-index:9}
+select{font:inherit;padding:1px 4px}
+.legend{display:inline-block;width:120px;height:10px;background:linear-gradient(90deg,#1d4ed8,#fff,#c2410c);border:1px solid var(--line);vertical-align:middle;margin:0 4px}
+.note{font-size:13px;color:var(--mute)}
+</style></head><body><main>
+<h1>Inside Frost 1.0 (Qwen2.5-3B base): one question, every matrix</h1>
+<p class="sub">Everything below is <b>real data</b> from your model file, recorded while it processed the prompt. Hover any coloured grid to read the exact number.
+<span class="legend"></span><span class="note">negative &larr; 0 &rarr; positive</span></p>
+<div id="app"></div>
+</main><div id="tip"></div>
+<script id="d" type="application/json">/*__DATA__*/null</script>
+<script>
+const D = JSON.parse(document.getElementById('d').textContent);
+const $ = s => document.querySelector(s), tip = $('#tip');
+const fmt = (x, n=4) => (x>=0?'+':'−') + Math.abs(x).toFixed(n);
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const vis = s => esc(s.replace(/\n/g,'⏎').replace(/ /g,'·'));
+const M = n => (n/1e6).toFixed(1)+'M', B = n => (n/1e9).toFixed(2)+'B';
+function b64(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function vec(o){return {a:new Int8Array(b64(o.d).buffer), s:o.s, mx:o.mx}}
+let queue = [];
+function color(t){ // t in [-1,1] -> white at 0, orange (+) / blue (-); sqrt boosts small values
+  const m = Math.sqrt(Math.min(1,Math.abs(t)));
+  return t>=0 ? [255-m*61, 255-m*190, 255-m*243] : [255-m*226, 255-m*177, 255-m*39];
+}
+function grid(label, o, cols, cell){
+  const v = vec(o), rows = Math.ceil(v.a.length/cols), id = 'c'+Math.random().toString(36).slice(2);
+  queue.push(()=>{
+    const c = document.getElementById(id), g = c.getContext('2d'), im = g.createImageData(cols*cell, rows*cell);
+    for(let i=0;i<v.a.length;i++){const [r,gg,b]=color(v.a[i]/127), x0=(i%cols)*cell, y0=Math.floor(i/cols)*cell;
+      for(let y=0;y<cell;y++)for(let x=0;x<cell;x++){const p=((y0+y)*cols*cell+x0+x)*4;im.data[p]=r;im.data[p+1]=gg;im.data[p+2]=b;im.data[p+3]=255}}
+    g.putImageData(im,0,0);
+    c.onmousemove=e=>{const r=c.getBoundingClientRect(),i=Math.floor((e.clientY-r.top)/cell)*cols+Math.floor((e.clientX-r.left)/cell);
+      if(i<v.a.length){tip.style.display='block';tip.style.left=e.clientX+12+'px';tip.style.top=e.clientY+12+'px';
+        tip.textContent=`${label}[${i}] ≈ ${(v.a[i]/127*v.s).toFixed(4)}`}};
+    c.onmouseleave=()=>tip.style.display='none';
+  });
+  return `<div class="vec"><b>${label} — ${v.a.length.toLocaleString()} numbers</b><canvas id="${id}" width="${cols*cell}" height="${rows*cell}"></canvas></div>`;
+}
+function receipt(title, r, wname, xname){
+  const rows = r.terms.map((t,i)=>`<tr><td class="l dim">term ${i+1}</td><td>${fmt(t[0])}</td><td>${fmt(t[1])}</td><td>${fmt(t[2],5)}</td></tr>`).join('');
+  return `<div style="margin:8px 0"><b>${title}</b><table><tr><th class="l"></th><th>${wname}</th><th>× ${xname}</th><th>= product</th></tr>${rows}
+  <tr><td class="l dim" colspan="4">… ${(r.n-6).toLocaleString()} more rows exactly like these …</td></tr>
+  <tr><td class="l">sum of ALL ${r.n.toLocaleString()} products</td><td colspan="2" class="dim">${r.bias?'+ bias '+fmt(r.bias):''}</td><td class="hl">${fmt(r.full_sum+r.bias,5)}</td></tr>
+  <tr><td class="l">model's recorded value</td><td colspan="2"></td><td class="hl">${fmt(r.out,5)}</td></tr></table></div>`;
+}
+function card(n, title, why, body, macs){
+  return `<section class="card"><h2><span class="step">${n}</span>${title}${macs?`<span class="mac">${macs}</span>`:''}</h2><p class="why">${why}</p>${body}</section>`;
+}
+function attn(L, l, head){
+  const T = D.T, pat = b64(L.pat), at = (h,i,j)=>pat[(h*T+i)*T+j]/255, cell = Math.max(6, Math.min(14, Math.floor(420/T))), id='a'+Math.random().toString(36).slice(2);
+  queue.push(()=>{const c=document.getElementById(id),g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);
+    for(let i=0;i<T;i++)for(let j=0;j<=i;j++){const w=at(head,i,j),m=Math.sqrt(w);g.fillStyle=`rgb(${255-m*61},${255-m*187},${255-m*243})`;g.fillRect(j*cell,i*cell,cell,cell)}
+    g.strokeStyle='#c2410c';g.lineWidth=1.5;g.strokeRect(0.5,(T-1)*cell+0.5,T*cell-1,cell-1);
+    c.onmousemove=e=>{const r=c.getBoundingClientRect(),i=Math.floor((e.clientY-r.top)/cell),j=Math.floor((e.clientX-r.left)/cell);
+      if(i<T&&j<T){tip.style.display='block';tip.style.left=e.clientX+12+'px';tip.style.top=e.clientY+12+'px';
+        tip.textContent=j>i?'(masked: can’t look ahead)':`"${D.tokens[i].trim()||'␣'}" looks at "${D.tokens[j].trim()||'␣'}": ${(at(head,i,j)*100).toFixed(1)}%`}};
+    c.onmouseleave=()=>tip.style.display='none';});
+  const last = [...Array(T).keys()].map(j=>[j,at(head,T-1,j)]).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const bars = last.map(([j,w])=>`<div class="bar"><span class="mono" style="width:90px">${vis(D.tokens[j])}</span><i style="width:${w*220}px"></i>${(w*100).toFixed(1)}%</div>`).join('');
+  return `<div class="row"><div><div class="note">rows = the word asking, columns = the word being looked at (orange frame = the last token)</div><canvas id="${id}" width="${T*cell}" height="${T*cell}"></canvas></div>
+    <div><b>Where the last token ("${vis(D.tokens[T-1])}") looks, head ${head}:</b>${bars}</div></div>`;
+}
+let head = 0;
+function render(l){
+  queue = []; const L = D.layers[l], g = (o,lab,c=64,cell=4)=>grid(lab,o,c,cell);
+  const K = D.dim, F = D.ffn, mc = D.macs, cn = L.corner;
+  let h = '';
+  h += card(1,'Residual stream in', `The running “notes” about the last token. Layer ${l} receives the notes written by layers 0…${l-1} and adds to them. Always ${K} numbers.`, g(L.resid_in,'resid_in'));
+  h += card(2,'RMSNorm: rescale before using', 'Divide by the typical size of the vector so every layer sees numbers of similar scale, then multiply by a learned per-dimension gain.',
+    `<div class="f">out[i] = in[i] ÷ √(mean(in²) + ε) × gain[i]</div><div class="row">${g(L.resid_in,'before')}${g(L.attn_in,'after (attn_in)')}</div>`);
+  h += card(3,'Q, K, V: three matrix multiplications', `The normed vector is multiplied by three learned matrices. <b>Q</b> = “what am I looking for?”, <b>K</b> = “what do I contain?”, <b>V</b> = “what do I hand over if chosen?”. Q has 16 heads × 128; K,V have only 2 heads × 128 (shared, “grouped-query attention”).`,
+    `<div class="f">Q = W_q · x + b_q &nbsp; (${K}×${K}) &nbsp;|&nbsp; K = W_k · x + b_k &nbsp; (256×${K}) &nbsp;|&nbsp; V = W_v · x + b_v &nbsp; (256×${K})</div>
+     <div class="row"><div>${receipt('One output number, Q[0], computed by hand', L.rc_q, 'weight W_q[0,i]', 'x[i]')}</div>
+     <div><b>The top-left 6×6 corner of W_q (of ${K}×${K})</b><table>${cn.W.map(r=>'<tr>'+r.map(v=>'<td>'+fmt(v,3)+'</td>').join('')+'</tr>').join('')}</table>
+     <div class="note">× x = [${cn.x.map(v=>fmt(v,2)).join(', ')} …]</div></div></div>
+     <div class="row">${g(L.q,'Q (16 heads × 128)',64,4)}${g(L.k,'K (2 heads × 128)',64,4)}${g(L.v,'V (2 heads × 128)',64,4)}</div>
+     <div class="note">Then RoPE rotates Q and K by an angle that depends on word position, so attention knows word order.</div>`,
+    `${M(mc.q+mc.k+mc.v)} multiply-adds`);
+  h += card(4,'Attention: who looks at whom', `Each head scores Q·K between the last token and every earlier token, turns the scores into percentages (softmax), so it knows how much of each word's V to blend in. <select onchange="head=+this.value;render(${l})">${[...Array(D.heads).keys()].map(i=>`<option value="${i}" ${i==head?'selected':''}>head ${i}</option>`).join('')}</select>`,
+    `<div class="f">score(i,j) = (Q_i · K_j) ÷ √128 &nbsp;→&nbsp; softmax over j &nbsp;→&nbsp; weights that sum to 100%</div>${attn(L,l,head)}`,
+    `${(D.T*D.heads*D.T/2*128*2/1e6).toFixed(2)}M multiply-adds (grows with prompt length)`);
+  h += card(5,'Blend the V’s, then project back (W_o)', 'Each head returns a weighted average of V vectors. The 16 head outputs are glued together and multiplied by W_o, then <b>added</b> onto the residual stream (the “skip connection”).',
+    `<div class="f">attn_out = W_o · concat(head outputs) &nbsp;;&nbsp; resid_mid = resid_in + attn_out</div><div class="row">${g(L.attn_ctx,'heads’ blended V (attn_ctx)')}${g(L.attn_out,'after W_o (attn_out)')}${g(L.resid_mid,'resid_mid = resid_in + attn_out')}</div>`,
+    `${M(mc.o)} multiply-adds`);
+  const tn = L.top_neurons.map(t=>`<tr><td class="l">#${t[0]}</td><td>${fmt(t[1],3)}</td><td>${fmt(t[2],3)}</td><td class="hl">${fmt(t[3],3)}</td></tr>`).join('');
+  h += card(6,'MLP: 11,008 tiny “detectors”', `Where most of the knowledge lives. The vector is expanded to ${F.toLocaleString()} neurons (<b>gate</b> and <b>up</b>), combined as silu(gate) × up, then squeezed back to ${K} numbers (<b>down</b>) and added to the residual. These three matrices are 87% of each layer's work.`,
+    `<div class="f">act = silu(W_gate · x) × (W_up · x) &nbsp;;&nbsp; mlp_out = W_down · act &nbsp;;&nbsp; resid_out = resid_mid + mlp_out</div>
+     <div class="row"><div>${receipt(`Neuron #${L.neuron} (the most active one) — its gate value`, L.rc_gate, 'weight W_gate[n,i]', 'x[i]')}</div>
+     <div>${receipt('Squeezing back: mlp_out[0]', L.rc_down, 'weight W_down[0,j]', 'act[j]')}</div></div>
+     <div class="row">${g(L.ffn_in,'ffn_in (normed)')}${g(L.mlp_out,'mlp_out')}${g(L.resid_out,'resid_out = resid_mid + mlp_out')}</div>
+     <div class="row">${g(L.gate,'gate (11,008 neurons)',128,3)}${g(L.up,'up (11,008)',128,3)}${g(L.act,'act = silu(gate)×up',128,3)}</div>
+     <b>Six strongest neurons for this token</b><table><tr><th class="l">neuron</th><th>gate</th><th>up</th><th>act</th></tr>${tn}</table>`,
+    `${M(mc.gate+mc.up+mc.down)} multiply-adds`);
+  h += card(7,`Layer ${l} done`, `That layer cost <b>${M(D.macs_layer)}</b> multiply-adds for this one token. If we stopped the model here and asked “what word do you think comes next?”, it would say:`,
+    `<div class="row">${L.lens.map(([t,p],i)=>`<div class="tok ${i==0?'last':''}">${vis(t)}<small>${(p*100).toFixed(0)}%</small></div>`).join('')}</div>
+     <div class="note">(“logit lens”: reading the residual stream early, before the model finishes. Meaningless early on, then sharpens.)</div>`);
+  $('#layerbody').innerHTML = h; queue.forEach(f=>f()); $('#lname').textContent = l;
+}
+function build(){
+  const toks = D.tokens.map((t,i)=>`<span class="tok ${i==D.T-1?'last':''}">${vis(t)}<small>${D.ids[i]}</small></span>`).join('');
+  const lens = D.layers.map((L,i)=>`<tr><td class="l">${i}</td>${L.lens.slice(0,3).map(([t,p])=>`<td class="l">${vis(t)} <span class="dim">${(p*100).toFixed(0)}%</span></td>`).join('')}</tr>`).join('');
+  const fin = D.final.map(([t,lg,p])=>`<div class="bar"><span class="mono" style="width:110px">${vis(t)}</span><i style="width:${p*300}px"></i>${(p*100).toFixed(2)}% <span class="dim">(logit ${lg.toFixed(2)})</span></div>`).join('');
+  const total = D.macs_layer*D.nlayers + D.macs_head;
+  $('#app').innerHTML =
+   card('A','Your text becomes numbers', `The prompt is wrapped in Qwen's chat format and split into <b>${D.T} tokens</b> (pieces of words). Each token is just an ID number. The orange one is the last token — it’s the one whose output predicts the next word, so we follow its journey. The model reads the others only through attention.`, `<div>${toks}</div>`) +
+   card('B','Each ID becomes a vector (embedding)', `Row ${D.ids[D.T-1]} of the embedding table (151,936 rows × ${D.dim} columns) is copied out. No arithmetic yet: it's a lookup. These ${D.dim} numbers are the model's initial “meaning” of the token.`, grid('embedding of last token',D.emb,64,4)) +
+   `<div class="ctl">Layer <b id="lname">0</b> of ${D.nlayers-1} &nbsp;<input id="sl" type="range" min="0" max="${D.nlayers-1}" value="0"> &nbsp;<span class="note">Drag to follow the vector through all ${D.nlayers} identical layers. Same recipe, different learned numbers.</span></div>
+    <div id="layerbody"></div>` +
+   card('C','After 36 layers: numbers → a word', `The final vector is normed once more and multiplied by the embedding table again (all 151,936 rows), giving one score per possible token. Softmax turns scores into probabilities. This is the only place a “choice” happens.`,
+     `<div class="f">logits = E · norm(resid_final) &nbsp;(151,936 × ${D.dim}) &nbsp;→&nbsp; softmax</div>${fin}
+      <p>Full answer when generating on: <b>${esc(D.answer)}</b></p>`, `${B(D.macs_head)} multiply-adds`) +
+   card('D','The “3 billion multiply-adds”', `A multiply-add (MAC) is one step of a dot product: <code>total += weight × input</code>. A matrix times a vector is just many dot products. For <b>one token</b>: ${D.nlayers} layers × ${M(D.macs_layer)} + ${M(D.macs_head)} output head = <b>${B(total)}</b>. Every weight in the model is used exactly once per token. That is why the model has ~3 billion weights and why each token costs ~3 billion MACs.`,
+     `<table><tr><th class="l">matrix</th><th>shape</th><th>MACs per layer</th></tr>
+      ${Object.entries(D.macs).map(([k,v])=>`<tr><td class="l">${k}</td><td>${k=='gate'||k=='up'?D.ffn+'×'+D.dim:k=='down'?D.dim+'×'+D.ffn:(k=='k'||k=='v')?'256×'+D.dim:D.dim+'×'+D.dim}</td><td>${M(v)}</td></tr>`).join('')}
+      <tr><td class="l hl">per layer</td><td></td><td class="hl">${M(D.macs_layer)}</td></tr></table>
+      <p class="note">Your ${D.T}-token prompt cost about ${(total*D.T/1e9).toFixed(0)} billion MACs to process, all before the first word of the answer.</p>`) +
+   card('E','Watching the answer form (logit lens, every layer)', 'Top-3 guesses if the model had to answer after layer N. Early layers are noise; a few layers before the end, the answer snaps into place.',
+     `<table><tr><th class="l">layer</th><th class="l">#1</th><th class="l">#2</th><th class="l">#3</th></tr>${lens}</table>`);
+  $('#sl').oninput = e => render(+e.target.value);
+  render(0);
+}
+build();
+</script></body></html>

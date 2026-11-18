@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frost 1.0 - coding neurons in 10 working programs (3D map)</title>
+<style>
+:root{--pea:#0A5C6E;--bg:#E8F2F4;--line:#CBE0E5;--ink:#0B2E38}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.4 Consolas,monospace;background:var(--bg);color:var(--ink)}
+header{background:var(--pea);color:#fff;padding:12px 18px}
+header h1{margin:0;font:700 18px system-ui,Segoe UI,sans-serif}
+header div{font:12px system-ui,Segoe UI,sans-serif;color:#BFE6EC;margin-top:3px}
+main{padding:12px 16px 40px}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+button{font:inherit;border:1px solid var(--pea);background:#fff;color:var(--pea);border-radius:8px;padding:4px 11px;cursor:pointer}
+button.on{background:var(--pea);color:#fff}
+#c{display:block;width:100%;height:auto;background:#000;border-radius:10px;cursor:grab;border:1px solid #06303a}
+pre{margin:6px 0;white-space:pre;overflow-x:auto;font:inherit}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:10px 0}
+details{margin-left:1.2em}summary{cursor:pointer}
+</style></head><body>
+<header><h1>Frost 1.0 &mdash; the coding neurons: 10 real, working programs, smallest to biggest (3D map)</h1>
+<div>The model reads each program's real source code. Every dot is an MLP neuron (36 layers &times; 11,008). Pink/orange/green/violet/yellow = the neurons that work much harder on code than on ordinary text replies.</div></header>
+<main>
+<div class="ctl"><b>program</b> <span id="btns"></span> <button id="prev">&larr;</button><button id="next">&rarr;</button><button id="play">&#9654; play small &rarr; big</button>
+ &nbsp; <button id="tText">text-reply neurons (gold)</button><button id="tParts" class="on">colour coding neurons by language part</button>
+ &nbsp; <button id="v1">side</button><button id="v2">top</button><button id="v3">perspective</button> <label><input type="checkbox" id="spin"> auto-rotate</label></div>
+<div class="card"><pre id="stats"></pre></div>
+<canvas id="c" width="1700" height="900"></canvas>
+<div id="hover">hover a bright dot for details &nbsp;|&nbsp; drag to rotate, wheel to zoom</div>
+<div class="card"><pre id="legend"></pre></div>
+<div class="card"><pre id="table"></pre></div>
+<div class="card" id="more"></div>
+</main>
+<script id="d" type="application/json">/*__DATA__*/null</script>
+<script>
+const D = JSON.parse(document.getElementById('d').textContent), $ = s => document.querySelector(s), N = x => Math.round(x).toLocaleString();
+const NL = D.layers, F = D.ffn, COLS = 128, ROWS = F / COLS, CS = 1.6, GAP = 22, TOT = NL * F;
+const u8 = s => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const offs = c => { const o = [0]; c.forEach(x => o.push(o[o.length - 1] + x)); return o; };
+function ids(o) { const a = new Uint16Array(u8(o.idx).buffer), off = offs(o.cnt), mask = new Uint8Array(TOT); for (let l = 0; l < NL; l++) for (let i = off[l]; i < off[l + 1]; i++) mask[l * F + a[i]] = 1; return {a, off, mask}; }
+const coding = ids(D.coding), text = ids(D.text), segs = {}; Object.keys(D.segs).forEach(k => segs[k] = ids(D.segs[k]));
+const SEGCOL = {csharp: '255,120,60', html: '90,230,110', css: '190,120,255', javascript: '255,235,70'};
+const segOf = new Int8Array(TOT).fill(-1), SK = Object.keys(segs); SK.forEach((k, i) => { for (let j = 0; j < TOT; j++) if (segs[k].mask[j]) segOf[j] = i; });
+const R = D.rows; R.forEach(r => { r.top = new Uint16Array(u8(r._top_idx).buffer); r.topVal = new Int8Array(u8(r._top_val).buffer); r.topOff = offs(r._top_cnt); });
+let cur = 0, showText = false, parts = true, yaw = 0.42, pitch = 0.3, zoom = 1.45, drag = false, nodes = [], pick = null, timer = null;
+const c = $('#c'), g = c.getContext('2d');
+function proj(x, y, z) { const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy, y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp, s = 900 / (900 + z2) * zoom;
+  return [c.width / 2 + x1 * s, c.height / 2 + y2 * s, s]; }
+const pos = (l, i) => [(l - NL / 2) * GAP, ((i >> 7) - ROWS / 2) * CS, ((i & 127) - COLS / 2) * CS];
+function render() {
+  const r = R[cur]; nodes = [];
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'lighter';
+  const eng = new Uint8Array(TOT);
+  for (let l = 0; l < NL; l++) for (let k = r.topOff[l]; k < r.topOff[l + 1]; k++) eng[l * F + r.top[k]] = 1 + (r.topVal[k] > 60 ? 1 : 0);
+  for (let l = 0; l < NL; l++) {
+    const x = (l - NL / 2) * GAP, q = [[-ROWS / 2, -COLS / 2], [-ROWS / 2, COLS / 2], [ROWS / 2, COLS / 2], [ROWS / 2, -COLS / 2]].map(([a, b]) => proj(x, a * CS, b * CS));
+    g.strokeStyle = 'rgba(70,110,135,0.45)'; g.beginPath(); q.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.stroke();
+    g.fillStyle = 'rgba(100,140,170,0.20)';
+    for (let i = 0; i < F; i += 16) { const p = pos(l, i), s = proj(p[0], p[1], p[2]); g.fillRect(s[0], s[1], 1, 1); }
+  }
+  if (showText) { g.fillStyle = 'rgba(255,190,50,0.55)'; for (let l = 0; l < NL; l++) for (let k = text.off[l]; k < text.off[l + 1]; k++) { const p = pos(l, text.a[k]), s = proj(p[0], p[1], p[2]); g.fillRect(s[0] - 1, s[1] - 1, 2.2 * s[2], 2.2 * s[2]); } }
+  for (let l = 0; l < NL; l++) for (let i = 0; i < F; i++) {                                    // engaged neurons (cyan) first
+    const e = eng[l * F + i]; if (!e || coding.mask[l * F + i]) continue;
+    const p = pos(l, i), s = proj(p[0], p[1], p[2]); g.fillStyle = e > 1 ? 'rgba(60,225,240,0.75)' : 'rgba(40,160,190,0.42)'; g.fillRect(s[0], s[1], 1.6 * s[2], 1.6 * s[2]);
+  }
+  for (let l = 0; l < NL; l++) for (let k = coding.off[l]; k < coding.off[l + 1]; k++) {        // coding neurons
+    const i = coding.a[k], j = l * F + i, p = pos(l, i), s = proj(p[0], p[1], p[2]), e = eng[j], sg = segOf[j];
+    const col = parts && sg >= 0 ? SEGCOL[SK[sg]] : '255,70,170';
+    g.fillStyle = `rgba(${col},${e ? 0.95 : 0.55})`; const z = (e ? 3.6 : 2.2) * s[2]; g.fillRect(s[0] - z / 2, s[1] - z / 2, z, z);
+    if (e) { g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(s[0] - z / 6, s[1] - z / 6, z / 3, z / 3); nodes.push([s[0], s[1], l, i, sg]); }
+  }
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#9ab'; g.font = '13px Consolas,monospace';
+  for (let l = 0; l < NL; l += 5) { const s = proj((l - NL / 2) * GAP, -ROWS / 2 * CS - 6, 0); g.fillText('L' + l, s[0] - 7, s[1]); }
+  let s = proj((-NL / 2 - 1.5) * GAP, -ROWS / 2 * CS - 22, 0); g.fillStyle = '#ffd54a'; g.font = '18px system-ui,sans-serif'; g.fillText(`INPUT: program ${cur + 1}/10  ${r.program}  (${r.source_lines} lines, ${N(r.reply_tokens)} tokens)`, s[0], s[1]);
+  s = proj((NL / 2 - 7) * GAP, -ROWS / 2 * CS - 22, 0); g.fillStyle = '#7dff8a'; g.fillText('OUTPUT: working code', s[0], s[1]);
+  if (pick) { g.strokeStyle = '#ff0'; g.strokeRect(pick[0] - 6, pick[1] - 6, 12, 12); }
+}
+function info() {
+  const r = R[cur], t = r.tokens_by_part;
+  $('#stats').textContent =
+`PROGRAM ${cur + 1}/10: ${r.program}  -  "${r.description}"
+${r.source_lines} lines, ${N(r.reply_tokens)} tokens of code  (C# ${N(t.csharp)}, HTML ${N(t.html)}, CSS ${N(t.css)}, JavaScript ${N(t.javascript)})
+neurons triggered per token (average) ...... ${N(r.avg_triggered_per_token)}  (${(100 * r.avg_triggered_per_token / TOT).toFixed(2)}% of ${N(TOT)})
+neurons triggered anywhere in the program ... ${N(r.union_triggered)}  (${(100 * r.union_triggered / TOT).toFixed(1)}%)
+coding neurons (the ${N(D.summary.coding_neurons)}-neuron coding set) triggered: ${N(r.coding_set_triggered_union)}  (${(100 * r.coding_set_triggered_union / D.summary.coding_neurons).toFixed(1)}% of the set)
+text-reply neurons (gold set) triggered ....... ${N(r.text_set_triggered_union)} of ${N(D.summary.text_reply_set)}`;
+}
+function table() {
+  const mx = Math.max(...R.map(r => r.union_triggered));
+  let t = ' #  program           lines   tokens  avg/token   whole-program union          coding set on   text set on\n';
+  R.forEach((r, k) => t += `${String(k + 1).padStart(2)}  ${r.program.padEnd(16)} ${String(r.source_lines).padStart(5)} ${N(r.reply_tokens).padStart(8)} ${N(r.avg_triggered_per_token).padStart(9)}   ${N(r.union_triggered).padStart(8)} ${'#'.repeat(Math.round(16 * r.union_triggered / mx)).padEnd(16)}  ${String(r.coding_set_triggered_union).padStart(6)} / ${D.summary.coding_neurons}   ${String(r.text_set_triggered_union).padStart(5)}\n`);
+  $('#table').textContent = 'SMALLEST -> BIGGEST PROGRAM\n' + t;
+}
+function more() {
+  const s = D.summary, t = s.coding_by_layer, mx = Math.max(...t);
+  const bars = t.map((v, l) => `layer ${String(l).padStart(2)}  ${String(v).padStart(5)}  ${'#'.repeat(Math.round(40 * v / mx))}`).join('\n');
+  $('#more').innerHTML = '';
+  const mk = (title, body) => { const d = document.createElement('details'); const sm = document.createElement('summary'); sm.textContent = title; const p = document.createElement('pre'); p.textContent = body; d.appendChild(sm); d.appendChild(p); $('#more').appendChild(d); };
+  mk('Coding neurons per layer', bars);
+  mk('Overlaps (how separate are the sets?)', `coding set ........................ ${N(s.coding_neurons)} neurons (${(100 * s.coding_neurons / TOT).toFixed(2)}%)\ntext-reply set (gold) ............ ${N(s.text_reply_set)}\ncoding AND text-reply ............ ${N(s.overlap_coding_text)}   (separate circuits if this is ~0)\nearlier 'Code' category set ...... ${N(s.code_category_set_earlier)}, of which inside the new coding set: ${N(s.overlap_coding_code_category)}\n\nby language part (web programs 7-10), inside the coding set:\n` + Object.entries(s.segment_sets).map(([k, v]) => `  ${k.padEnd(11)} ${N(v)}`).join('\n') + '\noverlap between parts: ' + JSON.stringify(s.segment_overlap));
+}
+function sel(k) { cur = k; document.querySelectorAll('#btns button').forEach((b, i) => b.className = i === k ? 'on' : ''); info(); render(); }
+for (let k = 0; k < R.length; k++) { const b = document.createElement('button'); b.textContent = k + 1; b.onclick = () => { stop(); sel(k); }; $('#btns').appendChild(b); }
+$('#prev').onclick = () => { stop(); sel((cur + 9) % 10); }; $('#next').onclick = () => { stop(); sel((cur + 1) % 10); };
+function stop() { if (timer) { clearInterval(timer); timer = null; $('#play').innerHTML = '&#9654; play small &rarr; big'; } }
+$('#play').onclick = () => { if (timer) return stop(); sel(0); $('#play').textContent = '|| stop'; timer = setInterval(() => { if (cur >= 9) return stop(); sel(cur + 1); }, 2000); };
+$('#tText').onclick = () => { showText = !showText; $('#tText').className = showText ? 'on' : ''; render(); };
+$('#tParts').onclick = () => { parts = !parts; $('#tParts').className = parts ? 'on' : ''; render(); };
+const view = (a, b, z) => () => { yaw = a; pitch = b; zoom = z; render(); };
+$('#v1').onclick = view(0, 0, 1.55); $('#v2').onclick = view(0, 1.5, 1.55); $('#v3').onclick = view(0.42, 0.3, 1.45);
+c.onmousedown = () => { drag = true; c.style.cursor = 'grabbing'; }; window.onmouseup = () => { drag = false; c.style.cursor = 'grab'; };
+c.onmousemove = e => {
+  if (drag) { yaw += e.movementX * 0.008; pitch = Math.max(-1.55, Math.min(1.55, pitch + e.movementY * 0.008)); render(); return; }
+  const b = c.getBoundingClientRect(), mx = (e.clientX - b.left) * c.width / b.width, my = (e.clientY - b.top) * c.height / b.height;
+  let best = null, bd = 80; for (const n of nodes) { const d = (n[0] - mx) ** 2 + (n[1] - my) ** 2; if (d < bd) { bd = d; best = n; } }
+  pick = best; if (best) $('#hover').textContent = `layer ${best[2]}  neuron #${best[3]}  CODING neuron engaged by this program${best[4] >= 0 ? '  (specific to ' + SK[best[4]] + ')' : ''}`; render();
+};
+c.onwheel = e => { e.preventDefault(); zoom = Math.max(0.4, Math.min(6, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); render(); };
+setInterval(() => { if ($('#spin').checked && !drag) { yaw += 0.01; render(); } }, 40);
+$('#legend').textContent =
+`HOW TO READ THE MAP
+  grey frames .... the 36 layers (layer 0 left); faint dots = a sample of all neurons
+  cyan ........... the 8,000 neurons most active while the model processes this program's code
+  PINK ........... the ${N(D.summary.coding_neurons)} coding neurons (>=3x more active on code than on ordinary text replies, in both halves of the programs)
+  with 'colour by language part' on: ORANGE = C#, GREEN = HTML, VIOLET = CSS, YELLOW = JavaScript  (the web programs contain all four)
+  small white centre ... that coding neuron is among the engaged ones for the selected program
+  gold (toggle) .. the text-reply neurons from the earlier scan, for comparison`;
+table(); more(); sel(0);
+</script></body></html>

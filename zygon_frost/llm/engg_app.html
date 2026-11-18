@@ -1,0 +1,74 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frost Engg</title>
+<style>
+:root{--ink:#1c2b30;--mute:#6b7d83;--line:#e1e8ea;--acc:#0A6C80;--bg:#f6f9fa;--ok:#1f7a4d;--bad:#b3261e}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#fff}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line)}header b{font-size:16px}#stat{margin-left:auto;color:var(--mute);font-size:12px}
+main{display:grid;grid-template-columns:270px 1fr;min-height:calc(100vh - 54px)}
+aside{border-right:1px solid var(--line);background:var(--bg);padding:14px;overflow-y:auto;max-height:calc(100vh - 54px)}aside h4{margin:14px 0 6px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.6px}
+section{padding:20px 28px;max-width:900px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}aside input[type=text],aside select{width:100%;margin-bottom:6px}
+.item{padding:7px 9px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px}.item:hover{background:#e6eff1}.item.on{background:#dcecef}.item small{color:var(--mute)}.item a{color:var(--mute);text-decoration:none}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer}.btn:hover{background:#08596a}.ghost{background:none;color:var(--acc);border:1px solid var(--line)}.ghost:hover{background:#eef5f6}
+canvas{width:100%;height:340px;border:1px solid var(--line);border-radius:12px;background:#fbfdfd;cursor:grab;touch-action:none}
+table{border-collapse:collapse;width:100%;margin-top:10px}th,td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}th{color:var(--mute);font-weight:500;font-size:12px}
+.muted{color:var(--mute)}.warn{background:#fff7e0;border:1px solid #f0dca0;border-radius:8px;padding:8px 10px;margin:10px 0;font-size:13px}.err{background:#fdecea;border:1px solid #f3c1bc;border-radius:8px;padding:8px 10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+@media(max-width:760px){main{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<header><b>Frost Engg</b><div id="stat"></div></header>
+<main>
+<aside>
+ <h4>Structures</h4><div id="list"></div>
+ <h4>Add a simple example</h4><select id="ex"></select><button class="btn" id="addex" style="width:100%">Add it</button>
+ <h4>Add your own</h4><input type="text" id="nm" placeholder="Name"><input type="file" id="file" accept=".ply,.json" style="width:100%;margin-bottom:6px"><button class="btn" id="up" style="width:100%">Add the file</button>
+ <div class="muted" style="font-size:12px;margin-top:6px">A point cloud (.ply) from a video or photos, or a structure file (.json) that was already analysed.</div>
+ <div id="msg" class="muted" style="margin-top:8px"></div>
+</aside>
+<section id="main"><div class="muted">Pick a structure on the left, or add an example.</div></section>
+</main>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+const api = (p, o) => fetch(p, o).then(r => r.json()), fmt = x => x == null ? '' : (Math.abs(x) >= 1000 || (Math.abs(x) < 0.001 && x != 0)) ? x.toExponential(3) : (+x.toPrecision(4)).toString();
+let sel = null, S = null, mats = {}, rot = {a: 0.6, b: 0.5, z: 1}, raf = 0;
+async function status() { const s = await api('/api/status'); $('#stat').textContent = `${s.structures} structures · source copy ` + (s.copy_matches_original === false ? 'DIFFERS FROM ORIGINAL' : 'unchanged'); mats = s.materials;
+  if (!$('#ex').options.length) s.examples.forEach(e => $('#ex').add(new Option(e))); }
+async function list() { const l = await api('/api/list'); $('#list').innerHTML = l.map(x => `<div class="item ${x.id == sel ? 'on' : ''}" data-i="${x.id}"><span>${esc(x.name)}<br><small>${x.parts.length} parts</small></span><a href="#" data-d="${x.id}" title="Remove">✕</a></div>`).join('') || '<div class="muted">None yet.</div>';
+  document.querySelectorAll('.item').forEach(e => e.onclick = ev => { if (ev.target.dataset.d) { ev.preventDefault(); api('/api/forget?id=' + ev.target.dataset.d).then(() => { if (sel == ev.target.dataset.d) { sel = null; $('#main').innerHTML = ''; } list(); status(); }); } else pick(+e.dataset.i); }); }
+$('#addex').onclick = async () => { $('#msg').textContent = 'Working...'; const r = await api('/api/example?kind=' + encodeURIComponent($('#ex').value)); $('#msg').textContent = r.error || ''; await list(); await status(); if (r.id) pick(r.id); };
+$('#up').onclick = async () => { const f = $('#file').files[0]; if (!f) { $('#msg').textContent = 'Choose a file first.'; return; } $('#msg').textContent = 'Working...';
+  const r = await api('/api/upload?name=' + encodeURIComponent($('#nm').value || f.name) + '&file=' + encodeURIComponent(f.name), {method: 'POST', body: await f.arrayBuffer()}); $('#msg').textContent = r.error || ''; await list(); await status(); if (r.id) pick(r.id); };
+async function pick(id) { sel = id; S = await api('/api/get?id=' + id); document.querySelectorAll('.item').forEach(e => e.classList.toggle('on', e.dataset.i == id)); await drawPage(); }
+async function drawPage() {
+  const matOpts = '<option value="">no material</option>' + Object.entries(mats).map(([k, v]) => `<option value="${v}">${k} (${v} kg/m³)</option>`).join('');
+  $('#main').innerHTML = `<h2 style="margin:0">${esc(S.name)}</h2><div class="muted">${esc(S.source)} · added ${esc(S.learned_at)}</div>
+  <canvas id="cv" width="900" height="340"></canvas><div class="muted" style="font-size:12px">Drag to turn, scroll to zoom.</div>
+  <div class="row"><span>Real size: the longest side of the box around it is</span><input type="number" id="len" step="any" placeholder="same as drawn" style="width:130px"><select id="unit"><option>m</option><option>mm</option><option>cm</option><option>in</option><option>ft</option></select><select id="mat">${matOpts}</select><button class="btn" id="m">Measure</button></div>
+  <div id="meas"></div><div id="sim"></div>`;
+  $('#m').onclick = measure; wire(); draw(); measure(); const sm = await api('/api/similar?id=' + sel);
+  $('#sim').innerHTML = sm.length ? '<h3>Looks like</h3>' + sm.map(x => `<a href="#" class="sm" data-i="${x.id}">${esc(x.name)}</a> <span class="muted">(difference ${x.distance})</span>`).join('<br>') : ''; document.querySelectorAll('.sm').forEach(a => a.onclick = e => { e.preventDefault(); pick(+a.dataset.i); });
+}
+async function measure() {
+  const lo = S.bbox[0], hi = S.bbox[1], L = Math.max(...hi.map((h, i) => h - lo[i])), want = parseFloat($('#len').value), unit = $('#unit').value, scale = want > 0 ? want / L : 1, dens = $('#mat').value;
+  const m = await api(`/api/measure?id=${sel}&scale=${scale}&unit=${want > 0 ? unit : 'units'}` + (dens ? '&density=' + dens : '')); const u = want > 0 ? unit : 'units (not scaled)';
+  const rows = m.parts.map(p => p.type == 'cylinder' ? `<tr><td>${p.n}</td><td>cylinder</td><td>radius ${fmt(p.radius)}, length ${fmt(p.length)}</td><td>${fmt(p.volume)}</td><td>${fmt(p.side_area)}</td><td>${p.mass != null ? fmt(p.mass) + ' kg' : ''}</td></tr>` : `<tr><td>${p.n}</td><td>flat face</td><td>${esc(p.size)}</td><td></td><td>${fmt(p.area)}</td><td></td></tr>`).join('');
+  $('#meas').innerHTML = `<table><tr><th>#</th><th>Part</th><th>Size (${u})</th><th>Volume</th><th>Surface area</th><th>Mass</th></tr>${rows}</table>
+  <p>Box around it: ${m.box.map(fmt).join(' × ')} ${u}. Total surface counted: ${fmt(m.surface_area)}. Points used ${m.points_used}, left unexplained ${m.unexplained_points}.</p><div class="warn">${esc(m.note)}${want > 0 ? '' : ' Enter a real length above to get true units.'}</div>
+  ${S.truth ? check(m, scale) : ''}${S.st.primitives.some(p => p.formulas) ? '<div class="muted">Formulas that fit these parts: ' + [...new Set(S.st.primitives.flatMap(p => p.formulas || []))].map(f => f.replace(/_/g, ' ')).join(', ') + '</div>' : ''}`;
+}
+function check(m, scale) {
+  const T = S.truth, P = S.st.primitives, used = new Set(); let out = '<h3>Check against the known sizes</h3><table><tr><th>True part</th><th>Found</th><th>Difference</th></tr>';
+  for (const t of T) { let best = -1, be = 9; P.forEach((p, i) => { if (used.has(i) || p.type != t.type) return; const e = t.type == 'plane' ? Math.abs(p.area - t.area) / t.area : Math.max(Math.abs(p.radius - t.radius) / t.radius, Math.abs(p.length - t.length) / t.length); if (e < be) { be = e; best = i; } });
+    if (best < 0) out += `<tr><td>${t.type == 'plane' ? 'face ' + fmt(t.area) : 'cylinder r ' + t.radius + ' L ' + t.length}</td><td>not found</td><td></td></tr>`; else { used.add(best); const p = P[best]; out += `<tr><td>${t.type == 'plane' ? 'face area ' + fmt(t.area) : 'cylinder r ' + t.radius + ', L ' + t.length}</td><td>${t.type == 'plane' ? fmt(p.area) : 'r ' + fmt(p.radius) + ', L ' + fmt(p.length)}</td><td>${(be * 100).toFixed(1)}%</td></tr>`; } }
+  return out + `</table>${P.length - used.size ? `<p class="muted">${P.length - used.size} extra part(s) found that are not in the true list.</p>` : ''}`;
+}
+function wire() { const c = $('#cv'); let d = null; c.onpointerdown = e => { d = [e.clientX, e.clientY]; c.setPointerCapture(e.pointerId); c.style.cursor = 'grabbing'; };
+  c.onpointermove = e => { if (!d) return; rot.a += (e.clientX - d[0]) * .01; rot.b += (e.clientY - d[1]) * .01; d = [e.clientX, e.clientY]; draw(); }; c.onpointerup = () => { d = null; c.style.cursor = 'grab'; };
+  c.onwheel = e => { e.preventDefault(); rot.z *= e.deltaY < 0 ? 1.1 : 0.9; draw(); }; }
+function draw() {
+  const c = $('#cv'); if (!c) return; const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); const lo = S.bbox[0], hi = S.bbox[1], mid = lo.map((l, i) => (l + hi[i]) / 2), span = Math.max(...hi.map((h, i) => h - lo[i])) || 1;
+  const ca = Math.cos(rot.a), sa = Math.sin(rot.a), cb = Math.cos(rot.b), sb = Math.sin(rot.b), k = 0.62 * Math.min(c.width, c.height) / span * rot.z;
+  const pr = p => { const x = p[0] - mid[0], y = p[1] - mid[1], z = p[2] - mid[2]; const x1 = x * ca - y * sa, y1 = x * sa + y * ca; const y2 = y1 * cb - z * sb, z2 = y1 * sb + z * cb; return [c.width / 2 + x1 * k, c.height / 2 - z2 * k, y2]; };
+  g.lineWidth = 1.4; g.strokeStyle = '#0A6C80'; for (const pl of S.lines) { g.beginPath(); pl.forEach((p, i) => { const q = pr(p); i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.stroke(); }
+}
+status().then(list);
+</script></body></html>

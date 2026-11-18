@@ -1,0 +1,111 @@
+{
+ "T1": {
+  "questions": 102,
+  "formulas": 51,
+  "off": {
+   "dev": {
+    "top1": 0.2692307692307692,
+    "top3": 0.40384615384615385,
+    "n": 52
+   },
+   "test": {
+    "top1": 0.1,
+    "top3": 0.24,
+    "n": 50
+   }
+  },
+  "on": {
+   "dev": {
+    "top1": 0.28846153846153844,
+    "top3": 0.4423076923076923,
+    "n": 52
+   },
+   "test": {
+    "top1": 0.14,
+    "top3": 0.28,
+    "n": 50
+   },
+   "chosen": {
+    "tau": 0.4,
+    "lam": 1.5,
+    "mode": "unmatched"
+   }
+  }
+ },
+ "T2": {
+  "off": {
+   "dev": {
+    "right": 0.6111111111111112,
+    "wrong": 0.05555555555555555,
+    "no_answer": 0.3333333333333333,
+    "n": 18,
+    "false_on_engineering": 0,
+    "engineering_n": 8
+   },
+   "test": {
+    "right": 0.6111111111111112,
+    "wrong": 0.0,
+    "no_answer": 0.3888888888888889,
+    "n": 18,
+    "false_on_engineering": 0,
+    "engineering_n": 8
+   }
+  },
+  "on": {
+   "dev": {
+    "right": 0.6666666666666666,
+    "wrong": 0.05555555555555555,
+    "no_answer": 0.2777777777777778,
+    "n": 18,
+    "false_on_engineering": 0,
+    "engineering_n": 8
+   },
+   "test": {
+    "right": 0.6666666666666666,
+    "wrong": 0.0,
+    "no_answer": 0.3333333333333333,
+    "n": 18,
+    "false_on_engineering": 0,
+    "engineering_n": 8
+   },
+   "chosen": {
+    "tau": 0.5
+   }
+  }
+ },
+ "T3": {
+  "sentences": 17,
+  "off": {
+   "dev": {
+    "right": 0.6470588235294118,
+    "wrong": 0.29411764705882354,
+    "asked_where_to_learn": 0.058823529411764705,
+    "n": 17
+   },
+   "test": {
+    "right": 0.8235294117647058,
+    "wrong": 0.11764705882352941,
+    "asked_where_to_learn": 0.058823529411764705,
+    "n": 17
+   }
+  },
+  "on": {
+   "dev": {
+    "right": 0.7058823529411765,
+    "wrong": 0.23529411764705882,
+    "asked_where_to_learn": 0.058823529411764705,
+    "n": 17
+   },
+   "test": {
+    "right": 0.8235294117647058,
+    "wrong": 0.17647058823529413,
+    "asked_where_to_learn": 0.0,
+    "n": 17
+   },
+   "chosen": {
+    "tau": 0.6
+   }
+  }
+ },
+ "seconds": 3.7
+}

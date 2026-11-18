@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZYGON</title>
+<style>
+:root{--ink:#1c2b30;--mute:#7a8c92;--line:#e4eaec;--acc:#0A6C80;--bg:#fbfcfc;--card:#fff;--warn:#b3442f}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:15px/1.55 system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:12px 22px;border-bottom:1px solid var(--line);flex:none}
+#title{font-weight:650;letter-spacing:.2px}#status{color:var(--mute);font-size:13px;flex:1}
+button{font:inherit;background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 12px;cursor:pointer}button:hover{border-color:var(--acc);color:var(--acc)}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}button.pri:hover{opacity:.9;color:#fff}button.link{border:0;background:none;color:var(--mute);padding:2px 4px}
+main{flex:1;display:flex;min-height:0}
+#chat{flex:1;display:flex;flex-direction:column;min-width:0}
+#msgs{flex:1;overflow-y:auto;padding:22px 0}#inner{max-width:720px;margin:0 auto;padding:0 22px}
+#chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:720px;margin:18vh auto 0;padding:0 22px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:8px 16px;cursor:pointer;color:var(--ink)}.chip:hover{border-color:var(--acc);color:var(--acc)}
+.u{margin:18px 0 6px;text-align:right}.u span{display:inline-block;background:#eef5f6;border-radius:14px;padding:8px 14px;max-width:85%;text-align:left}
+.a{margin:8px 0;white-space:pre-wrap;word-wrap:break-word}.note{color:var(--mute);font-size:12.5px;margin:2px 0 10px}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;margin:10px 0}
+.card h4{margin:0 0 4px;font-size:14px;display:flex;gap:8px;align-items:baseline}.card h4 small{color:var(--mute);font-weight:400}
+.card .body{white-space:pre-wrap}.card ul{margin:6px 0 0;padding-left:18px}.card li{margin:3px 0}.card a{color:var(--acc);text-decoration:none}.card a:hover{text-decoration:underline}.card .d{color:var(--mute);font-size:12.5px}
+.card .row{display:flex;gap:8px;margin-top:10px}.card textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:8px}
+.skip{color:var(--mute);font-size:13px;margin:4px 0}
+pre.code{background:#f3f7f8;border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;font:13px/1.5 Consolas,monospace;margin:8px 0;white-space:pre}
+button.small{font-size:12.5px;padding:2px 10px}
+#bar{padding:14px 22px 22px;flex:none}#box{max-width:720px;margin:0 auto;display:flex;gap:8px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:6px 6px 6px 16px}#box:focus-within{border-color:var(--acc)}
+#inp{flex:1;border:0;outline:0;font:inherit;background:transparent;resize:none;padding:6px 0;max-height:120px}
+aside{flex:0 0 310px;border-left:1px solid var(--line);padding:18px 22px;overflow-y:auto;font-size:14px}
+aside h5{margin:20px 0 6px;font-size:12px;letter-spacing:.8px;color:var(--mute);font-weight:600;text-transform:uppercase}aside h5:first-child{margin-top:0}aside p{margin:4px 0}.bar{height:3px;background:var(--line);border-radius:2px;margin:8px 0}.bar i{display:block;height:100%;background:var(--acc);width:0;border-radius:2px}
+.warn{color:var(--warn)}
+#settings{position:fixed;inset:0;background:#ffffff;display:none;overflow-y:auto;z-index:5}#sin{max-width:760px;margin:0 auto;padding:26px 22px 60px}
+#sin h2{margin:0 0 4px;font-size:20px}#sin h3{margin:28px 0 8px;font-size:15px}.field{display:flex;gap:8px;margin:8px 0}.field input[type=text],.field input[type=number]{flex:1;font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.item{display:flex;gap:12px;align-items:flex-start;border-bottom:1px solid var(--line);padding:9px 0}.item .t{flex:1;min-width:0}.item .k{color:var(--mute);font-size:12px}.item .p{color:var(--mute);font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+label.src{display:inline-block;margin:4px 14px 4px 0}
+@media(max-width:860px){aside{display:none}}
+</style></head><body>
+<header><span id="title">ZYGON</span><span id="status"></span><button id="newchat">New chat</button><button id="gear">Settings</button></header>
+<main>
+ <section id="chat"><div id="msgs"><div id="inner"></div><div id="chips"></div></div>
+  <div id="bar"><div id="box"><button id="attach" title="Add a file" style="border:0;font-size:20px;padding:0 6px">+</button><input type="file" id="file" multiple hidden accept=".pdf,.docx,.pptx,.epub,.odt,.txt,.md,.csv,.json,.html,.htm,.py,.c,.js,.log"><textarea id="inp" rows="1" placeholder="Message, or drop a file here" autofocus></textarea><button class="pri" id="send">Send</button></div></div></section>
+ <aside id="side"></aside>
+</main>
+<div id="settings"><div id="sin">
+ <div class="field" style="justify-content:space-between"><h2 id="stitle">Settings</h2><button id="close">Close</button></div>
+ <h3>Things I know</h3><div class="field"><input type="text" id="sq" placeholder="Search everything I know"></div><div id="scount" class="note"></div><div id="items"></div>
+ <h3>Add to what I know</h3>
+ <div class="field"><input type="text" id="pdfpath" placeholder="Path to a PDF on this PC, for example C:\Users\you\Documents\file.pdf"></div>
+ <div class="field"><button class="pri" id="addpdf">Add the PDF and watch</button><button id="addpdffast">Add it quickly</button></div>
+ <div class="field"><button id="addeng">Add everyday English and watch</button><button id="addengfast">Add it quickly</button><button id="addcode" style="display:none">Add coding lessons</button><button id="check">Run a quick check</button><button id="stopjob">Stop</button></div>
+ <div id="jobnote" class="note"></div>
+ <h3>Where I look things up</h3><div id="sources"></div><div class="note">When I do not know something I ask you where to read about it. Say "find ..." and I check all of these one after another.</div>
+ <h3>Memory notice</h3><div class="field"><span style="padding-top:6px">Tell me when I use more than</span><input type="number" id="notice" min="0.1" step="1" style="max-width:100px"><span style="padding-top:6px">MB</span></div>
+</div></div>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const api = (u, b) => fetch(u, b === undefined ? {} : {method: 'POST', body: JSON.stringify(b)}).then(r => r.json());
+const EXAMPLES = ['Hello', 'What is a noun?', 'Find the speed of light', 'Search for the Eiffel Tower', 'What does a 404 status mean?', 'Tell me a joke'];
+const B = b => b === null || b === undefined ? '' : b < 1024 ? b + ' bytes' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+const N = n => Math.round(n).toLocaleString(), SEC = s => s < 10 ? s.toFixed(1) + ' seconds' : Math.round(s) + ' seconds', MS = m => m < 10 ? m.toFixed(1) + ' ms' : Math.round(m) + ' ms';
+let ST = null, started = false, polling = null;
+const inner = $('#inner');
+function chips() { $('#chips').innerHTML = (window.EX || EXAMPLES).map(e => `<span class="chip">${esc(e)}</span>`).join(''); document.querySelectorAll('.chip').forEach(c => c.onclick = () => send(c.textContent)); }
+function add(html, cls) { if (!started) { started = true; $('#chips').style.display = 'none'; } const d = document.createElement('div'); d.className = cls || 'a'; d.innerHTML = html; inner.appendChild(d); $('#msgs').scrollTop = 1e9; return d; }
+function fmt(t) { const parts = String(t).split('```'); return parts.map((p, i) => i % 2 ? `<pre class="code">${esc(p.replace(/^[a-z+#]*\n/, ''))}</pre>` : esc(p)).join(''); }
+function showReply(r) {
+  if (r.kind === 'ask' || r.kind === 'told') return add(fmt(r.text));
+  if (r.kind === 'learned') {
+    const d = add(esc(r.text)); if (r.preview) add(esc(r.preview) + (r.preview.length >= 420 ? '...' : ''), 'note');
+    if (r.item) { const u = add('<button class="small">Undo</button> <span class="note">saved; you can also delete it in Settings</span>', 'note'); u.querySelector('button').onclick = async () => { await api('/api/delete', {id: r.item}); u.innerHTML = 'Forgotten again.'; refresh(); }; }
+    if (r.answer) showReply(r.answer); return refresh();
+  }
+  if (r.kind === 'action') {
+    add(fmt(r.text)); if (r.files) add('Files: ' + r.files.map(f => esc(f)).join(', '), 'note'); if (r.url) add(`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`); if (r.zip) add(`<a href="${esc(r.zip)}" download><button class="pri small">Download the project (.zip)</button></a>`);
+    return refresh();
+  }
+  const src = r.kind === 'saved' ? `From ${esc(r.from)}, saved earlier` : r.kind === 'lang' ? `From ${[...new Set(r.from)].map(esc).join('; ')}` : r.kind === 'doc' ? 'From ' + [...new Set((r.segments || []).map(s => s.source.replace(/ p\.(\d+)/, ', page $1')))].slice(0, 3).join('; ') : '';
+  add(fmt(r.text));
+  const fx = r.fixed && r.fixed.length ? ' &middot; I read ' + r.fixed.map(f => `"${esc(f[0])}" as "${esc(f[1])}"`).join(', ') : '';
+  add(`${src ? src + ' &middot; ' : ''}answered in ${MS(r.ms)}${fx}`, 'note'); if (r.follow) add(esc(r.follow)); refresh();
+}
+async function sendFile(f) {
+  add(`<span>${esc(f.name)}</span>`, 'u'); const d = add('Reading ' + esc(f.name) + '...', 'note');
+  const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.readAsDataURL(f); });
+  const r = await api('/api/upload', {name: f.name, data}); d.remove(); if (r.error) return add(esc(r.error)); showReply(r);
+}
+// one screen, not scrollable: only the latest exchange is shown; it is saved and restored when you come back
+try { const s = localStorage.getItem('zygon_screen'); if (s) { inner.innerHTML = s; started = true; $('#chips').style.display = 'none'; } } catch (e) {}
+new MutationObserver(() => { try { localStorage.setItem('zygon_screen', inner.innerHTML); } catch (e) {} }).observe(inner, {childList: true, subtree: true, characterData: true});
+$('#newchat').onclick = async () => { await api('/api/reset', {}); inner.innerHTML = ''; started = false; $('#chips').style.display = ''; };
+$('#attach').onclick = () => $('#file').click(); $('#file').onchange = async e => { for (const f of e.target.files) await sendFile(f); e.target.value = ''; };
+addEventListener('dragover', e => e.preventDefault()); addEventListener('drop', async e => { e.preventDefault(); for (const f of e.dataTransfer.files) await sendFile(f); });
+async function send(text) {
+  text = (text || $('#inp').value).trim(); if (!text) return; $('#inp').value = ''; $('#inp').style.height = 'auto'; inner.innerHTML = ''; add(`<span>${esc(text)}</span>`, 'u');
+  const r = await api('/api/ask', {q: text});
+  if (r.kind === 'search') return webCard(r);
+  showReply(r);
+}
+// ---------------- web look-up cards, shown one source after another
+let lastWeb = null;
+async function webCard(r) {
+  add(r.unknown ? `I do not know that yet. Let me look up <b>${esc(r.query)}</b> for you.` : `Looking up <b>${esc(r.query)}</b>...`);
+  const box = add('', 'results'), shown = {}; let tries = 0;
+  const tick = async () => {
+    const w = await api('/api/web'); if (w.id !== r.id && tries < 3) { tries++; return setTimeout(tick, 500); }
+    lastWeb = w;
+    w.results.forEach((x, i) => { if (shown[i]) return; shown[i] = 1; box.appendChild(card(x, i, w)); });
+    $('#msgs').scrollTop = 1e9;
+    if (w.state === 'done') { const ok = w.results.filter(x => x.ok).length; add(`Checked ${w.results.length} sources in ${SEC(w.seconds || 0)}; ${ok} had something. Nothing is remembered unless you press Remember.`, 'note'); refresh(); } else setTimeout(tick, 700);
+  }; tick();
+}
+function card(x, i, w) {
+  const d = document.createElement('div');
+  if (!x.ok) { d.className = 'skip'; d.innerHTML = `${esc(x.source)}: ${esc(x.note || 'nothing found')}`; return d; }
+  d.className = 'card'; const long = (x.summary || '').length > 460;
+  let h = `<h4>${esc(x.source)} <small>${x.seconds}s</small></h4>`;
+  {
+    h += `<div class="body">${esc(long ? x.summary.slice(0, 460) + '...' : x.summary)}</div>` + (long ? '<button class="link more">Show more</button>' : '');
+    if (x.items && x.items.length) h += '<ul>' + x.items.map(t => `<li><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.title)}</a>${t.detail ? `<div class="d">${esc(t.detail)}</div>` : ''}</li>`).join('') + '</ul>';
+    if (x.text) h += '<div class="row"><button class="rem pri">Remember this</button><button class="no">Not now</button></div>';
+  }
+  d.innerHTML = h; const more = d.querySelector('.more'); if (more) more.onclick = () => { d.querySelector('.body').textContent = x.summary; more.remove(); };
+  const rem = d.querySelector('.rem'); if (rem) rem.onclick = async () => { const r = await api('/api/remember', {index: i}); if (r.error) return alert(r.error); rem.parentElement.innerHTML = '<span class="d">Remembered. I will use it next time you ask.</span>'; refresh(); };
+  const no = d.querySelector('.no'); if (no) no.onclick = () => d.remove();
+  return d;
+}
+// ---------------- status panel in plain language
+function nowText(s) {
+  const j = s.job, w = s.web;
+  if (j.state === 'reading') return [`Reading ${j.name}: page ${j.pages_read} of ${j.pages_total}.`, j.pages_read / Math.max(1, j.pages_total)];
+  if (j.state === 'preparing') return [`Getting ${j.name} ready...`, 1];
+  if (j.state === 'adding') return j.kind === 'lessons' ? [`Adding everyday English: ${j.sentences} of ${j.sentences_total} topics.`, j.sentences / Math.max(1, j.sentences_total)] : [`Adding ${j.name}: page ${j.page_now || 1} of ${j.pages_total}, ${N(j.words_done)} words so far.`, j.sentences / Math.max(1, j.sentences_total)];
+  if (j.state === 'checking') return ['Checking myself on sentences I was never taught...', 1];
+  if (w.state === 'running') return [`Looking up "${w.query}"...`, 0];
+  if (j.state === 'done' && j.doc) { const d = j.doc; return [d.pages ? `Finished ${d.name}: ${d.pages} pages, ${N(d.words_learned)} words, in ${SEC(d.learn_s)}.` : `Finished everyday English in ${SEC(d.learn_s)}.` + (j.test ? ` Quick check: ${j.test.matched_right_topic} of ${j.test.taught_wordings_tested} right.` : ''), 1]; }
+  if (j.state === 'stopped') return ['Stopped.', 0]; if (j.state === 'error') return ['Something went wrong while reading.', 0];
+  return ['Ready.', 0];
+}
+async function refresh() {
+  ST = await api('/api/state'); const s = ST; if (s.examples && !window.EX) { window.EX = s.examples; chips(); } if ($('#addcode')) $('#addcode').style.display = s.can_code ? '' : 'none'; document.title = s.name; $('#title').textContent = s.name;
+  const [now, frac] = nowText(s); $('#status').textContent = now;
+  const docs = s.docs.filter(d => d.pages), rs = s.reply, over = s.memory_bytes > s.settings.notice_mb * 1048576;
+  const know = s.docs.filter(d => d.name !== 'everyday English' && d.name !== 'coding lessons').map(d => `<p>${esc(d.name)}: ${d.pages ? d.pages + ' pages' : d.words_learned.toLocaleString() + ' words'}</p>`).join('') + (s.docs.some(d => d.name === 'coding lessons') ? '<p>Coding lessons: yes</p>' : '') + (s.counts.lessons ? `<p>Everyday English: ${s.counts.lessons} topics</p>` : '') + `<p>Answers you saved: ${s.counts.saved}</p>`;
+  const lastd = docs.length ? docs[docs.length - 1] : null;
+  $('#side').innerHTML = `<h5>Right now</h5><p>${esc(now)}</p><div class="bar"><i style="width:${Math.round(100 * frac)}%"></i></div>
+   <h5>What I know</h5>${know}
+   <h5>How fast I am</h5><p>${rs.n ? `I answer in about ${MS(rs.mean_ms)}.` : 'I have not answered anything yet.'}</p>${s.last_doc_speed ? `<p>I read about ${N(s.last_doc_speed)} words per second${lastd ? `: ${lastd.name} (${lastd.pages} pages) took ${SEC(lastd.learn_s)}` : ''}.</p>` : ''}
+   <h5>Room I take</h5><p class="${over ? 'warn' : ''}">I use ${B(s.memory_bytes)} for everything I know.${over ? ` That is over the ${s.settings.notice_mb} MB you asked me to watch.` : ` I will tell you if I pass ${s.settings.notice_mb} MB.`}</p>`;
+  if ($('#settings').style.display === 'block') jobNote(s);
+}
+function jobNote(s) { const j = s.job; $('#jobnote').textContent = j.state === 'done' && j.test ? `Quick check: ${j.test.matched_right_topic} of ${j.test.taught_wordings_tested} new wordings answered correctly; ${j.test.typo_matched} of ${j.test.typo_tests} with typing mistakes.` : nowText(s)[0]; }
+// ---------------- settings
+async function items() {
+  const r = await api('/api/items?q=' + encodeURIComponent($('#sq').value)); $('#scount').textContent = `${r.total} things${$('#sq').value ? ' match' : ' I know'}${r.total > r.items.length ? ` (showing ${r.items.length})` : ''}`;
+  $('#items').innerHTML = r.items.map(it => `<div class="item"><div class="t"><div class="k">${esc(it.kind)}${it.source && it.kind !== 'document' ? ' &middot; ' + esc(it.source) : ''}${it.extra ? ' &middot; ' + esc(it.extra) : ''}</div><div>${esc(it.title)}</div><div class="p">${esc(it.preview)}</div></div><button data-id="${esc(it.id)}" data-k="${esc(it.kind)}" data-t="${esc(it.title)}">Delete</button></div>`).join('');
+  document.querySelectorAll('#items button').forEach(b => b.onclick = async () => { if (b.dataset.k !== 'saved answer' && !confirm(`Delete "${b.dataset.t}"? I will forget it.`)) return; await api('/api/delete', {id: b.dataset.id}); items(); refresh(); });
+}
+$('#gear').onclick = async () => { $('#settings').style.display = 'block'; $('#stitle').textContent = 'Settings: ' + ST.name; const s = ST; $('#notice').value = s.settings.notice_mb;
+  $('#sources').innerHTML = s.all_sources.map(n => `<label class="src"><input type="checkbox" value="${esc(n)}" ${s.settings.sources.includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('');
+  document.querySelectorAll('#sources input').forEach(c => c.onchange = () => api('/api/settings', {sources: [...document.querySelectorAll('#sources input:checked')].map(x => x.value)})); items(); jobNote(s); };
+$('#close').onclick = () => { $('#settings').style.display = 'none'; }; $('#sq').oninput = items; $('#notice').onchange = () => api('/api/settings', {notice_mb: +$('#notice').value}).then(refresh);
+const start = async (u, b) => { const r = await api(u, b); if (r.error) alert(r.error); else fast(); };
+$('#addpdf').onclick = () => start('/api/ingest', {path: $('#pdfpath').value, watch: true}); $('#addpdffast').onclick = () => start('/api/ingest', {path: $('#pdfpath').value, watch: false});
+$('#addcode') && ($('#addcode').onclick = () => start('/api/codelessons', {}));
+$('#addeng').onclick = () => start('/api/lessons', {watch: true}); $('#addengfast').onclick = () => start('/api/lessons', {watch: false});
+$('#check').onclick = async () => { $('#jobnote').textContent = 'Checking...'; const t = await api('/api/check', {}); $('#jobnote').textContent = `Quick check: ${t.matched_right_topic} of ${t.taught_wordings_tested} new wordings answered correctly (${(100 * t.accuracy).toFixed(0)}%), ${t.typo_matched} of ${t.typo_tests} with typing mistakes, and ${t.document_questions_wrongly_answered_as_chat.length + t.unknown_questions_wrongly_answered.length} wrong answers to things I should not know.`; };
+$('#stopjob').onclick = () => api('/api/stop', {});
+function fast() { clearInterval(polling); polling = setInterval(async () => { await refresh(); if (!['reading', 'preparing', 'adding', 'checking'].includes(ST.job.state)) { clearInterval(polling); polling = setInterval(refresh, 4000); if ($('#settings').style.display === 'block') items(); } }, 400); }
+$('#send').onclick = () => send(); $('#inp').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }; $('#inp').oninput = () => { const t = $('#inp'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; };
+chips(); refresh().then(fast);
+</script></body></html>

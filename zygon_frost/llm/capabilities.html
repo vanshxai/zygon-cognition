@@ -1,0 +1,186 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Frost 1.0 capabilities</title>
+<style>
+body{font:13px/1.35 Consolas,monospace;margin:0;background:#fff;color:#000}
+#bar{position:sticky;top:0;background:#fff;border-bottom:1px solid #000;padding:8px 14px;z-index:5}
+button,input{font:inherit}
+#app{margin:8px 14px 80px}
+pre{margin:2px 0;font:inherit;white-space:pre;overflow-x:auto}
+details{margin-left:1.2em}summary{cursor:pointer;white-space:pre}
+.ok{font-weight:bold}.bad{font-weight:bold;text-decoration:underline}
+</style></head><body>
+<div id="bar">
+ <b>Frost 1.0</b> &nbsp; <a href="/">transcript</a> | <a href="/neurons">neuron map</a> | <a href="/weights">weight browser</a> | <b>capabilities</b> &nbsp;
+ <button id="expand">expand all</button> <button id="collapse">collapse all</button>
+ <button id="probes">Run measured capability probes</button> <span id="pst"></span>
+</div>
+<div id="app">loading...</div>
+<script>
+const $ = s => document.querySelector(s), app = $('#app');
+const N = x => Math.round(x).toLocaleString();
+const GiB = b => (b / 2 ** 30).toFixed(3) + ' GiB', GB = b => (b / 1e9).toFixed(3) + ' GB';
+const B = b => `${N(b)} bytes  (${GB(b)} = ${GiB(b)})`;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function D(title, body, open) {
+  const d = document.createElement('details'); if (open) d.open = true;
+  const s = document.createElement('summary'); s.textContent = title; d.appendChild(s);
+  if (typeof body === 'string') { const p = document.createElement('pre'); p.textContent = body; d.appendChild(p); }
+  else if (body) (Array.isArray(body) ? body : [body]).forEach(b => d.appendChild(b));
+  return d;
+}
+const pad = (s, n) => String(s).padEnd(n), lp = (s, n) => String(s).padStart(n);
+let facts = null, vocab = null, wscan = null, probes = null, cache = {};
+
+async function j(u, o) { return (await fetch(u, o)).json(); }
+
+function secStorage(f) {
+  const F = f.files, R = f.ram, t = [];
+  t.push(`MODEL FILE  ${F.backup_copy}`);
+  t.push(`  total file size .......... ${B(F.gguf_file_bytes)}`);
+  t.push(`  header + metadata + index  ${B(F.gguf_header_and_metadata_bytes)}`);
+  t.push(`  weight data .............. ${B(F.gguf_tensor_data_bytes)}`);
+  t.push(`  parameters ............... ${N(f.params)}   (embedding table ${N(f.embedding_params)} + everything else ${N(f.non_embedding_params)})`);
+  t.push(`  average storage .......... ${f.avg_bits_per_weight.toFixed(3)} bits per weight  (original 16-bit would be ${GB(f.params * 2)})`);
+  t.push('');
+  t.push('STORED AS (quantization type)            tensors        parameters            bytes');
+  Object.entries(f.by_type).forEach(([k, v]) => t.push(`  ${pad(k, 8)} ${lp(v.tensors, 29)} ${lp(N(v.params), 17)} ${lp(N(v.bytes), 16)}  ${(100 * v.bytes / F.gguf_tensor_data_bytes).toFixed(1)}%`));
+  t.push('');
+  t.push('BY PART OF THE NETWORK (summed over the 36 layers)');
+  t.push('  ' + pad('tensor group', 26) + pad('types', 12) + lp('tensors', 8) + lp('parameters', 16) + lp('bytes', 15));
+  Object.entries(f.by_group).sort((a, b) => b[1].params - a[1].params).forEach(([k, v]) => t.push('  ' + pad(k, 26) + pad(v.types.join('+'), 12) + lp(v.tensors, 8) + lp(N(v.params), 16) + lp(N(v.bytes), 15)));
+  const disk = [`DISK`];
+  disk.push(`  backup copy (read-only) .. ${B(F.gguf_file_bytes)}`);
+  F.hf_cache_dirs.forEach(h => disk.push(`  downloaded cache copy .... ${B(h.bytes)}   ${h.path}`));
+  disk.push(`  project code + logs ...... ${B(F.project_llm_bytes)}   (llm folder)`);
+  disk.push(`  saved runs ............... ${B(F.project_runs_bytes)}   (runs folder)`);
+  disk.push(`  model folder ............. ${B(F.project_model_dir_bytes)}`);
+  if (F.disk_total) disk.push(`  drive ..................... ${GB(F.disk_free)} free of ${GB(F.disk_total)}`);
+  const ram = [`RAM (measured on the running server, just now)`];
+  ram.push(`  this process, in RAM now . ${B(R.process_working_set)}`);
+  ram.push(`  this process, committed .. ${B(R.process_private)}`);
+  ram.push(`  this process, peak ....... ${B(R.process_peak_working_set)}`);
+  ram.push(`  machine .................. ${GB(R.system_available)} available of ${GB(R.system_total)}`);
+  ram.push('');
+  ram.push(`  why RAM is bigger than the file: weights are stored in ~${f.avg_bits_per_weight.toFixed(1)} bits but kept as float32 (32 bits) while running:`);
+  ram.push(`  float32 weights in memory  ${B(R.float32_weights_in_memory)}   = ${R.float32_over_file.toFixed(2)} x the file size`);
+  ram.push(`  (the embedding table is shared with the output layer, so it is counted once)`);
+  ram.push('');
+  ram.push(`  KV cache (the memory of earlier words), float32: ${N(R.kv_cache_bytes_per_token)} bytes per token`);
+  ram.push(`     = 36 layers x 2 (K and V) x ${f.kv_heads} heads x ${f.head_dim} x 4 bytes`);
+  ram.push(`  at the full ${N(f.context_window)}-token context: ${B(R.kv_cache_at_full_context)}`);
+  return D(`1. STORAGE AND MEMORY (exact)   file ${GB(F.gguf_file_bytes)}  |  RAM while running ${GB(R.process_working_set)}  |  ${N(f.params)} parameters`, [D('Model file: size, quantization types, parts of the network', t.join('\n')), D('Disk usage', disk.join('\n')), D('RAM usage', ram.join('\n'))]);
+}
+
+function secArch(f) {
+  const t = [`layers ................... ${f.layers}`, `hidden size .............. ${f.hidden}`, `attention heads .......... ${f.heads} query heads, ${f.kv_heads} key/value heads (grouped-query attention), ${f.head_dim} numbers per head`,
+    `MLP neurons per layer .... ${N(f.ffn)}   (x ${f.layers} layers = ${N(f.ffn * f.layers)} neurons)`, `vocabulary ............... ${N(f.vocab)} tokens`,
+    `context window ........... ${N(f.context_window)} tokens (prompt + reply together)`, `position encoding ........ RoPE, base ${N(f.rope_base)}`,
+    `activation functions ..... SiLU in the MLP (SwiGLU), softmax in attention and at the output`, `normalisation ............ RMSNorm`];
+  const meta = Object.entries(f.meta).map(([k, v]) => `${pad(k, 44)} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n');
+  return D(`2. ARCHITECTURE   ${f.layers} layers, ${N(f.ffn * f.layers)} MLP neurons, ${N(f.context_window)}-token window`, [D('Numbers', t.join('\n')), D('Raw metadata read from the .gguf file', meta)]);
+}
+
+function secTopics() {
+  return D('3. "HOW MANY TOPICS ARE INSIDE THE WEIGHTS?"   (there is no list to count; read this first)', [
+    D('The honest answer', `The 3.09 billion numbers are not organised by topic. There is no table of contents inside them.
+Knowledge is spread across all weights at once: one neuron takes part in many topics, and one topic uses many neurons.
+So "how many topics" cannot be counted by looking at the weights. Any single number would be invented.
+
+What CAN be measured, and is on this page:
+  - exact storage and memory (section 1)
+  - what the vocabulary covers: scripts, languages, code, numbers (section 4)
+  - the statistics of the weights themselves (section 5)
+  - the context window limits (section 6)
+  - what the makers say it can do (section 7)
+  - what it actually did when I tested this exact quantized copy with real prompts, auto-checked (section 8)`)]);
+}
+
+function secVocab(v) {
+  const kids = v.categories.map(c => D(`${lp(N(c.count), 8)} tokens  ${(100 * c.count / v.total).toFixed(1).padStart(5)}%  ${c.name}`,
+    c.examples.map(e => `id ${pad(e[0], 7)} ${JSON.stringify(e[1])}`).join('\n')));
+  return D(`4. VOCABULARY SCAN (measured)   ${N(v.total)} tokens in ${v.categories.length} groups  -  shows what text it can read and write`,
+    [D('How to read this', `The vocabulary is the list of text pieces the model can see and produce. Having many pieces in a script means the model was built to handle that script.
+It says what the model can READ and WRITE, not how well it does so (see probes, section 8).
+"Latin with accents" mixes several languages: tokens alone cannot tell French from Spanish.
+${N(v.code_style_tokens)} tokens contain code-style characters such as _ { } ( ) ; = < > [ ].`), ...kids]);
+}
+
+function secWeights(w) {
+  if (!w || w.state === 'idle') return D('5. WEIGHT SCAN (measured)   starting...', 'The scan reads all 3.09 billion weights once. It takes about a minute.');
+  if (w.state === 'running') return D(`5. WEIGHT SCAN (measured)   running: ${w.done} of ${w.total} tensors`, 'Reading every weight. This page refreshes itself.');
+  const r = w.result, t = [pad('tensor group', 24) + lp('params', 16) + lp('mean', 11) + lp('std', 9) + lp('largest |w|', 13) + lp('% |w|<0.001', 13)];
+  r.groups.forEach(g => t.push(pad(g.group, 24) + lp(N(g.params), 16) + lp(g.mean.toFixed(5), 11) + lp(g.std.toFixed(4), 9) + lp(g.absmax.toFixed(3), 13) + lp(g.pct_tiny.toFixed(2), 13)));
+  const lay = Object.entries(r.layer_std).map(([k, v]) => D(`standard deviation of ${k} in each of the 36 layers`, v.map((x, i) => `layer ${lp(i, 2)}  ${x.toFixed(5)}  ${'#'.repeat(Math.round(x * 1500))}`).join('\n')));
+  return D(`5. WEIGHT SCAN (measured)   all ${N(r.groups.reduce((a, g) => a + g.params, 0))} weights read`,
+    [D('Statistics per tensor group', t.join('\n')), D('Per-layer weight spread (one dropdown per matrix type)', lay), D('Largest single values in the model', r.largest_values.map(x => `${pad(x[0], 32)} ${x[1].toFixed(3)}`).join('\n'))]);
+}
+
+function secContext(f, p) {
+  const W = f.context_window, R = f.ram, t = [];
+  t.push(`window ......... ${N(W)} tokens, shared by your prompt AND the reply`);
+  t.push(`in words ....... about ${N(W * 0.75)} English words, roughly ${N(W * 0.75 / 500)} pages (1 token ~ 0.75 word; fewer words for code, Chinese, numbers)`);
+  t.push(`documented ..... up to 8,192 tokens of reply in one go (per the model makers); the rest of the window is for the prompt`);
+  t.push(`memory ......... the KV cache for a full window is ${B(R.kv_cache_at_full_context)} in this engine (float32)`);
+  t.push(`speed .......... attention work grows with length, so a long prompt is slow on this CPU`);
+  t.push('');
+  t.push('WHAT FITS (rough): a 30-page report and a summary request | a 2,000-line source file and questions about it | a long chat history | a book chapter');
+  t.push('WHAT TO EXPECT: facts in the middle of a very long prompt are recalled less reliably than facts near the start or end; this copy is also quantized (${f.avg_bits_per_weight.toFixed(1)} bits per weight on average), which can cost a little accuracy.');
+  const kids = [D('Window numbers', t.join('\n'))];
+  const lc = p && p.results.find(r => r.cat === 'Long-context recall');
+  kids.push(D('What I actually tested on this machine', lc ? `needle-in-a-haystack: a secret code was hidden in the middle of ${N(lc.prompt_tokens)} tokens of filler text.
+result: ${lc.ok ? 'FOUND IT' : 'MISSED IT'}   model answered: ${JSON.stringify(lc.answer)}
+time to read the prompt and answer: ${lc.seconds}s
+NOT tested: lengths near ${N(W)} tokens (it would take roughly an hour per prompt on this CPU). The ${N(W)} figure is from the model file's metadata.` : 'Run the capability probes (button on top); the long-context test is the last probe.'));
+  return D(`6. CONTEXT WINDOW   ${N(W)} tokens = about ${N(W * 0.75)} words`, kids);
+}
+
+function secDocumented(f) {
+  return D('7. WHAT THE MAKERS DOCUMENT (not measured by me)', [
+    D('Source', `Qwen2.5 model family by Alibaba Cloud. The .gguf file names the source: ${f.meta['general.base_model.0.repo_url'] || 'https://huggingface.co/Qwen/Qwen2.5-3B'}
+licence: ${f.meta['general.license.name'] || '?'}  ${f.meta['general.license.link'] || ''}
+These are the makers' claims as I know them; check the model card for the exact wording. The next section tests what I could.`),
+    D('Languages', 'More than 29: including Chinese, English, French, Spanish, Portuguese, German, Italian, Russian, Japanese, Korean, Vietnamese, Thai, Arabic.'),
+    D('Skills named in the release notes', `coding (many programming languages)
+mathematics and step-by-step arithmetic
+understanding tables and other structured data
+generating structured output, especially JSON
+following instructions and formats
+role-play and persona prompts through the system message
+generating long text (up to about 8K tokens)`),
+    D('Size class', `${N(f.params)} parameters. A 3B model is small: it handles everyday writing, translation, simple code and Q&A well, and is weaker than large models at hard reasoning, rare facts and long multi-step maths.`)]);
+}
+
+function secProbes(p) {
+  const head = !p || !p.results.length ? 'none run yet - press "Run measured capability probes" at the top' : '';
+  if (head) return D('8. MEASURED CAPABILITY PROBES   ' + head, 'Each probe is a real prompt run through this exact model file, greedy decoding, answer auto-checked by a rule (no human grading, no code is executed).');
+  const cats = {}; p.results.forEach(r => (cats[r.cat] = cats[r.cat] || []).push(r));
+  const kids = Object.entries(cats).map(([c, rs]) => D(`${pad(c, 28)} ${rs.filter(r => r.ok).length} / ${rs.length} passed`, rs.map(r =>
+    D(`${r.ok ? '[PASS]' : '[FAIL]'} ${r.prompt.replace(/\s+/g, ' ').slice(0, 90)}`, `${r.system ? 'system prompt: ' + r.system + '\n' : ''}prompt (${r.prompt_tokens} tokens in):\n${r.prompt}\n\nmodel answered (${r.new_tokens} tokens, ${r.seconds}s, ${(r.new_tokens / Math.max(r.seconds - r.prefill_seconds, 0.1)).toFixed(2)} tokens/s):\n${r.answer}\n\nauto-check: ${r.check}  ->  ${r.ok ? 'PASS' : 'FAIL'}`))));
+  const pass = p.results.filter(r => r.ok).length;
+  const secs = p.results.reduce((a, r) => a + r.seconds, 0), toks = p.results.reduce((a, r) => a + r.new_tokens, 0);
+  return D(`8. MEASURED CAPABILITY PROBES   ${pass} / ${p.results.length} passed${p.state === 'running' ? `  (running: ${p.results.length} of ${p.total} done)` : ''}  -  ${Object.keys(cats).length} categories`,
+    [D('Summary', Object.entries(cats).map(([c, rs]) => `${pad(c, 28)} ${rs.filter(r => r.ok).length} / ${rs.length}`).join('\n') + `\n\noverall ${pass} / ${p.results.length}   |   ${toks} tokens generated in ${secs.toFixed(0)}s`),
+      D('How these were checked', 'Greedy decoding (temperature 0). Pass/fail by simple rules: contains the right word/number, valid JSON, Python that parses, correct script for the language, exact line/bullet/word counts. A PASS means the rule was met, not that the answer is perfect; a FAIL may be a wording miss. Open any probe to read the full answer.'), ...kids]);
+}
+
+const open = {};
+function snapshotOpen() { document.querySelectorAll('details').forEach(d => { open[d.firstChild.textContent.slice(0, 30)] = d.open; }); }
+function render() {
+  snapshotOpen(); app.textContent = '';
+  const parts = [secStorage(facts), secArch(facts), secTopics(), secVocab(vocab), secWeights(wscan), secContext(facts, probes), secDocumented(facts), secProbes(probes)];
+  parts.forEach(p => app.appendChild(p));
+  document.querySelectorAll('details').forEach(d => { if (open[d.firstChild.textContent.slice(0, 30)]) d.open = true; });
+}
+$('#expand').onclick = () => document.querySelectorAll('details').forEach(d => d.open = true);
+$('#collapse').onclick = () => document.querySelectorAll('details').forEach(d => d.open = false);
+$('#probes').onclick = async () => { const r = await j('/api/probes/start', {method: 'POST', body: '{}'}); $('#pst').textContent = r.ok ? 'probes started (about 25 minutes)' : 'cannot start: a run or the probes are already running'; };
+
+async function refresh() {
+  [facts, wscan, probes] = await Promise.all([j('/api/facts'), j('/api/wscan'), j('/api/probes')]);
+  if (!vocab) vocab = await j('/api/vocab');
+  render();
+  $('#pst').textContent = probes.state === 'running' ? `probes running: ${probes.results.length} of ${probes.total}` : $('#pst').textContent;
+  setTimeout(refresh, (wscan.state === 'running' || probes.state === 'running') ? 4000 : 20000);
+}
+refresh();
+</script></body></html>

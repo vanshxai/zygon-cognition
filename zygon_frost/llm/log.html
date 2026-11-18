@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Frost 1.0 transcript</title>
+<style>
+body{font:13px/1.35 Consolas,monospace;margin:0;background:#fff;color:#000}
+#bar{position:sticky;top:0;background:#fff;border-bottom:1px solid #000;padding:8px 14px}
+input,select,button{font:inherit}
+#prompt{width:50em;max-width:90vw}input[type=number]{width:4.5em}
+#log{margin:8px 14px 80px;font:inherit}#log pre{margin:0;font:inherit;white-space:pre;overflow-x:auto}details{margin-left:1.2em}summary{cursor:pointer;white-space:pre}
+</style></head><body>
+<div id="bar">
+ <b>Frost 1.0</b> &nbsp; ask: <input type="text" id="prompt" value="What's the capital of France?" autofocus>
+ <button id="send">Send</button> <button id="stop">Stop</button> <button id="save">Save run</button>
+ <button id="expand">expand all</button> <button id="collapse">collapse all</button> <a href="/neurons" target="_blank">neuron map</a> <a href="/capabilities" target="_blank">capabilities</a> <a href="/weights" target="_blank">weight browser</a><br>
+ max new tokens <input type="number" id="maxnew" value="12">
+ temperature <input type="number" id="temp" value="0" step="0.1">
+ pause per op (ms) <input type="number" id="delay" value="0">
+ list every multiply of the first <input type="number" id="full" value="1"> matrix op(s)
+ <label><input type="checkbox" id="compact"> compact (1 line per op)</label>
+ <label><input type="checkbox" id="tpl" checked> chat format</label>
+ <label><input type="checkbox" id="follow" checked> auto-scroll</label>
+ <span id="st"></span><br><span id="msg"></span>
+</div>
+<div id="log"></div>
+<script>
+const $ = s => document.querySelector(s), log = $('#log');
+let n = 0, epoch = -1, stack = [log];
+function addItems(items) {
+  for (const it of items) {
+    const cur = stack[stack.length - 1];
+    if (typeof it === 'string') {
+      let p = cur.lastElementChild;
+      if (!p || p.tagName !== 'PRE') { p = document.createElement('pre'); cur.appendChild(p); }
+      p.appendChild(document.createTextNode(it));
+    } else if (it.o !== undefined) {
+      const d = document.createElement('details'); if (it.open) d.open = true;
+      const s = document.createElement('summary'); s.textContent = it.o; d.appendChild(s);
+      cur.appendChild(d); stack.push(d);
+    } else if (stack.length > 1) stack.pop();
+  }
+}
+$('#expand').onclick = () => log.querySelectorAll('details').forEach(d => d.open = true);
+$('#collapse').onclick = () => log.querySelectorAll('details').forEach(d => d.open = false);
+const post = (u, b) => fetch(u, {method: 'POST', body: JSON.stringify(b)}).then(r => r.json());
+function send() {
+  const p = $('#prompt').value.trim(); if (!p) return;
+  post('/api/run', {prompt: p, template: $('#tpl').checked, max_new: +$('#maxnew').value, temp: +$('#temp').value,
+    delay: +$('#delay').value, full: +$('#full').value, compact: $('#compact').checked})
+   .then(r => { if (r.error) $('#st').textContent = r.error; else $('#st').textContent = ''; });
+}
+$('#send').onclick = send;
+$('#prompt').onkeydown = e => { if (e.key === 'Enter') send(); };
+$('#save').onclick = () => {
+  const guess = ($('#prompt').value || 'run').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const name = prompt('File name for this run (saved in the runs folder, .html is added):', guess);
+  if (name === null) return;
+  post('/api/save', {name}).then(r => { $('#msg').textContent = r.error ? r.error : 'saved ' + r.mb + ' MB -> ' + r.path; }); };
+$('#stop').onclick = () => post('/api/ctl', {stop: true});
+$('#delay').onchange = () => post('/api/ctl', {delay: +$('#delay').value});
+async function poll() {
+  let busy = false;
+  try {
+    const j = await (await fetch('/api/log?since=' + n)).json();
+    if (j.epoch !== epoch) { epoch = j.epoch; log.textContent = ''; stack = [log]; n = 0; busy = true; }
+    else if (j.chunks.length) {
+      addItems(j.chunks);
+      n = j.n; busy = true;
+      if ($('#follow').checked) window.scrollTo(0, document.body.scrollHeight);
+    }
+    $('#st').textContent = j.running ? '[running...]' : (n ? '[done]' : '');
+  } catch (e) {}
+  setTimeout(poll, busy ? 15 : 200);
+}
+poll();
+</script></body></html>

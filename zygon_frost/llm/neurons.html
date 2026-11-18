@@ -1,0 +1,174 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Frost 1.0 neuron map</title>
+<style>
+body{font:13px/1.35 Consolas,monospace;margin:10px 14px;background:#fff;color:#000}
+select,input,button{font:inherit}
+#hover{position:sticky;top:0;background:#fff;border-bottom:1px solid #000;padding:4px 0;min-height:1.4em;white-space:pre;z-index:3}
+pre{margin:6px 0;font:inherit}
+canvas{display:block;border:1px solid #000;margin:4px 0}
+#wrap2d{overflow-x:auto;max-width:100%}
+#c3{cursor:grab;background:#000;max-width:100%;height:auto}
+</style></head><body>
+<a href="/">&larr; transcript</a>
+<pre>FROST 1.0 NEURON MAP - the 11,008 MLP neurons of each of the 36 layers, for ONE token.
+Activation = silu(gate) x up, the number that goes into W_down.
+TRIGGERED = |activation| is at least the chosen % of the reference maximum.</pre>
+pass <select id="pass"></select>
+token <select id="pos"></select>
+reference max <select id="mode"><option value="layer">per layer (loudest neuron in each layer)</option><option value="global">global (loudest neuron in any layer)</option></select>
+triggered at &ge; <input type="number" id="thr" value="10" style="width:4em">%
+
+<button id="go">Redraw / refresh</button>
+<div id="hover">hover a view</div>
+<pre id="sum"></pre>
+
+<pre>3D VIEW - layers are planes along the long axis (layer 0 on the left). Each plane is a grid of cells, 8 neurons per cell (43 x 32 = 1,376 cells = 11,008 neurons).
+Bright cell = contains a triggered neuron (brighter = stronger); the strongest 150 triggered cells per layer are drawn (the table above has the full counts). Faint dots = every 3rd untriggered cell, for the plane shape.
+Lines join the strongest triggered cells of one layer to the next. They are ILLUSTRATIVE (strongest-to-strongest); the real wiring is the dense weight matrices.
+Yellow = the text entering (left). Cyan = neurons triggered. Orange = last 4 layers. Green = the word the model produced (right).
+Drag = rotate, wheel = zoom.   <button id="vside">side view</button> <button id="vtop">top view</button> <button id="vfront">front view</button> <button id="vpersp">perspective</button> <label><input type="checkbox" id="spin"> auto-rotate</label></pre>
+<canvas id="c3" width="1700" height="900"></canvas>
+
+<script>
+const $ = s => document.querySelector(s), N = x => Math.round(x).toLocaleString();
+let curPass = null, curPos = 0, meta = null, q = null, sc = null, NL = 36, CW = 43, CH = 32, CS = 3.6, GAP = 17, SHOW = 150;
+let cellT, cellArg, trig;                      // per layer: cell strength (0..), strongest neuron in cell, triggered cell list
+let yaw = 0.45, pitch = 0.3, zoom = 1.75, dragging = false, last3 = [], lastPick = null;
+
+const dec = s => { const b = atob(s), u = new Int8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i) << 24 >> 24; return u; };
+
+async function loadMeta() {
+  meta = await (await fetch('/api/neurons')).json();
+  const ps = $('#pass'), keep = ps.value; ps.innerHTML = '';
+  meta.passes.forEach(p => ps.add(new Option(`#${p.n} (${p.T} token${p.T > 1 ? 's' : ''}${p.n == 1 ? ', prompt' : ', generated'})`, p.n)));
+  if (!meta.passes.length) { $('#sum').textContent = 'No run yet. Ask something on the transcript page first, then press Redraw.'; return false; }
+  if (keep) ps.value = keep; fillPos(); return true;
+}
+function fillPos() {
+  const p = meta.passes.find(x => x.n == $('#pass').value), sel = $('#pos'); sel.innerHTML = '';
+  p.tokens.forEach((t, i) => sel.add(new Option(`${p.pos0 + i}: ${JSON.stringify(t)}`, i)));
+  sel.value = p.T - 1;
+}
+
+async function draw() {
+  if (!(await loadMeta())) return;
+  const d = await (await fetch(`/api/neurons?pass=${$('#pass').value}&pos=${$('#pos').value}`)).json();
+  q = d.d.map(dec); sc = d.scales; NL = q.length;
+  curPass = meta.passes.find(x => x.n == $('#pass').value); curPos = +$('#pos').value;
+  const gmax = Math.max(...sc), thr = +$('#thr').value / 100, mode = $('#mode').value;
+  const ref = l => (mode === 'layer' ? sc[l] : gmax) || 1;
+  let sum = 'layer  triggered neurons      share   loudest neuron (value)\n', tot = 0;
+  cellT = []; cellArg = []; trig = [];
+  for (let l = 0; l < NL; l++) {
+    const t = new Float32Array(CW * CH), arg = new Int32Array(CW * CH); let act = 0, best = 0, bi = 0;
+    for (let i = 0; i < q[l].length; i++) {
+      const a = Math.abs(q[l][i]);
+      const v = a / 127 * sc[l]; if (v > best) { best = v; bi = i; }
+      if (v / ref(l) >= thr) act++;
+    }
+    for (let c = 0; c < CW * CH; c++) {
+      let m = 0, mi = c * 8;
+      for (let k = 0; k < 8; k++) { const a = Math.abs(q[l][c * 8 + k]); if (a > m) { m = a; mi = c * 8 + k; } }
+      t[c] = m / 127 * sc[l] / ref(l); arg[c] = mi;
+    }
+    const tl = []; for (let c = 0; c < t.length; c++) if (t[c] >= thr) tl.push(c);
+    tl.sort((a, b) => t[b] - t[a]);
+    cellT.push(t); cellArg.push(arg); trig.push(tl); tot += act;
+    sum += `${String(l).padStart(5)}  ${String(act).padStart(5)} / ${N(q[l].length)}  ${(100 * act / q[l].length).toFixed(2).padStart(6)}%  #${bi} (${best.toFixed(4)})  ${'#'.repeat(Math.min(60, Math.round(act / 20)))}\n`;
+  }
+  $('#sum').textContent = sum + `total triggered: ${N(tot)} of ${N(NL * q[0].length)} neurons (${(100 * tot / (NL * q[0].length)).toFixed(2)}%)   token ${$('#pos').selectedOptions[0].text}`;
+  render3d();
+}
+
+// ---------------- 3D ----------------
+function label(txt, x, y, z, color, size, align) {
+  const s = proj(x, y, z); g3.fillStyle = color; g3.font = (size || 12) + 'px Consolas,monospace'; g3.textAlign = align || 'left';
+  g3.fillText(txt, s[0], s[1]); return s;
+}
+function line(a, b, color, w) {
+  const p = proj(...a), r = proj(...b); g3.strokeStyle = color; g3.lineWidth = w || 1;
+  g3.beginPath(); g3.moveTo(p[0], p[1]); g3.lineTo(r[0], r[1]); g3.stroke();
+}
+function annotate() {
+  if (!curPass) return;
+  const xin = (-NL / 2 - 4) * GAP, xout = (NL / 2 + 4) * GAP, top = -CH / 2 * CS;
+  g3.globalCompositeOperation = 'source-over';
+  // INPUT: the tokens of this pass, as a column on the left
+  const T = curPass.T, span = CH * CS * 1.7, step = Math.min(CS * 3, span / Math.max(T, 1)), y0 = -step * (T - 1) / 2;
+  label('INPUT: the text that entered', xin, y0 - 22, 0, '#ffd54a', 17);
+  label(curPass.n == 1 ? '(prompt tokens, in order)' : '(the one new token fed back in)', xin, y0 - 12, 0, '#ffd54a', 12);
+  curPass.tokens.forEach((t, i) => {
+    const y = y0 + i * step, on = i === curPos;
+    label(JSON.stringify(t).slice(0, 16), xin, y, 0, on ? '#ffff66' : '#8a8a60', on ? 13 : 10);
+  });
+  const yc = y0 + curPos * step;
+  line([xin + 6, yc, 0], [(-NL / 2) * GAP, 0, 0], 'rgba(255,230,90,0.75)', 2);
+  // layer groups
+  label('layers 0-' + (NL - 5) + ': neurons triggered by this token (cyan)', (-NL / 2) * GAP, top - 14, 0, '#6fe3ef', 13);
+  label('last layers ' + (NL - 4) + '-' + (NL - 1) + ' (orange): final push', (NL / 2 - 4) * GAP, top - 14, 0, '#ffa94d', 13);
+  // OUTPUT: top-5 next words on the right
+  label("OUTPUT: the model's next word", xout, -30, 0, '#7dff8a', 17);
+  if (curPass.top5 && curPos === curPass.T - 1) {
+    curPass.top5.forEach(([w, p], i) => label(`${JSON.stringify(w)}  ${(p * 100).toFixed(p < 0.01 ? 3 : 1)}%`, xout, -20 + i * 9, 0, i ? '#7fa07f' : '#7dff8a', i ? 12 : 16));
+    line([(NL / 2 - 1) * GAP, 0, 0], [xout - 4, -17, 0], 'rgba(125,255,138,0.75)', 2);
+  } else label('(only the last token of a pass produces a word)', xout, -20, 0, '#7fa07f', 12);
+}
+const c3 = $('#c3'), g3 = c3.getContext('2d');
+function proj(x, y, z) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
+  const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+  const s = 900 / (900 + z2) * zoom;
+  return [c3.width / 2 + x1 * s, c3.height / 2 + y2 * s, s, z2];
+}
+const cellPos = (l, c) => [(l - NL / 2) * GAP, ((c / CW | 0) - CH / 2) * CS, ((c % CW) - CW / 2) * CS];
+function render3d() {
+  if (!cellT) return;
+  g3.globalCompositeOperation = 'source-over'; g3.fillStyle = '#000'; g3.fillRect(0, 0, c3.width, c3.height);
+  g3.globalCompositeOperation = 'lighter'; last3 = [];
+  for (let l = 0; l < NL; l++) {                                    // faint plane outline + sampled dots
+    const x = (l - NL / 2) * GAP, cs = [[-CH / 2, -CW / 2], [-CH / 2, CW / 2], [CH / 2, CW / 2], [CH / 2, -CW / 2]].map(([a, b]) => proj(x, a * CS, b * CS));
+    g3.strokeStyle = 'rgba(80,120,150,0.35)'; g3.beginPath(); cs.forEach((p, i) => i ? g3.lineTo(p[0], p[1]) : g3.moveTo(p[0], p[1])); g3.closePath(); g3.stroke();
+    g3.fillStyle = 'rgba(110,150,180,0.30)';
+    for (let c = 0; c < CW * CH; c += 3) { const p = cellPos(l, c), s = proj(p[0], p[1], p[2]); g3.fillRect(s[0], s[1], 1, 1); }
+  }
+  g3.lineWidth = 1;                                                 // illustrative lines
+  for (let l = 0; l + 1 < NL; l++) {
+    const A = trig[l].slice(0, 25), B = trig[l + 1].slice(0, 25);
+    for (let r = 0; r < A.length; r++) for (let k = 0; k < 2; k++) {
+      const b = B[r + k]; if (b === undefined) continue;
+      const pa = cellPos(l, A[r]), pb = cellPos(l + 1, b), sa = proj(...pa), sb = proj(...pb);
+      g3.strokeStyle = `rgba(60,200,190,${0.10 + 0.25 * Math.min(1, cellT[l][A[r]])})`;
+      g3.beginPath(); g3.moveTo(sa[0], sa[1]); g3.lineTo(sb[0], sb[1]); g3.stroke();
+    }
+  }
+  for (let l = 0; l < NL; l++) for (const c of trig[l].slice(0, SHOW)) {            // triggered cells (strongest SHOW per layer)
+    const p = cellPos(l, c), s = proj(p[0], p[1], p[2]), t = Math.min(1, cellT[l][c]);
+    const r = (1.2 + 2.2 * t) * s[2];
+    g3.fillStyle = l >= NL - 4 ? `rgba(255,${150 + 80 * t | 0},${40 + 60 * t | 0},${0.6 + 0.4 * t})` : `rgba(${120 + 135 * t | 0},${230 + 25 * t | 0},255,${0.55 + 0.45 * t})`;
+    g3.fillRect(s[0] - r / 2, s[1] - r / 2, r, r); last3.push([s[0], s[1], l, c]);
+  }
+  g3.globalCompositeOperation = 'source-over'; g3.fillStyle = '#9ab'; g3.font = '11px Consolas,monospace';
+  for (let l = 0; l < NL; l += 5) { const s = proj((l - NL / 2) * GAP, -CH / 2 * CS - 4, 0); g3.fillText('L' + l, s[0] - 6, s[1]); }
+  annotate();
+  if (lastPick) { g3.strokeStyle = '#ff0'; g3.strokeRect(lastPick[0] - 5, lastPick[1] - 5, 10, 10); }
+}
+c3.onmousedown = e => { dragging = true; c3.style.cursor = 'grabbing'; };
+window.onmouseup = () => { dragging = false; c3.style.cursor = 'grab'; };
+c3.onmousemove = e => {
+  if (dragging) { yaw += e.movementX * 0.008; pitch = Math.max(-1.55, Math.min(1.55, pitch + e.movementY * 0.008)); render3d(); return; }
+  const r = c3.getBoundingClientRect(), mx = (e.clientX - r.left) * c3.width / r.width, my = (e.clientY - r.top) * c3.height / r.height;
+  let best = null, bd = 64; for (const p of last3) { const d = (p[0] - mx) ** 2 + (p[1] - my) ** 2; if (d < bd) { bd = d; best = p; } }
+  lastPick = best;
+  if (best) { const [, , l, c] = best, i = cellArg[l][c]; $('#hover').textContent = `3D  layer ${l}  cell ${c} (neurons #${c * 8}..#${c * 8 + 7})  strongest #${i}  activation ${(q[l][i] / 127 * sc[l]).toFixed(5)}`; }
+  render3d();
+};
+c3.onwheel = e => { e.preventDefault(); zoom = Math.max(0.3, Math.min(6, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); render3d(); };
+const view = (y, p, z) => () => { yaw = y; pitch = p; zoom = z; render3d(); };
+$('#vside').onclick = view(0, 0, 1.9); $('#vtop').onclick = view(0, 1.5, 1.9); $('#vfront').onclick = view(-1.5, 0, 3.2); $('#vpersp').onclick = view(0.45, 0.3, 1.75);
+setInterval(() => { if ($('#spin').checked && !dragging) { yaw += 0.01; render3d(); } }, 40);
+
+$('#go').onclick = draw; $('#pass').onchange = () => { fillPos(); draw(); }; $('#pos').onchange = draw;
+$('#mode').onchange = draw; $('#thr').onchange = draw;
+draw();
+</script></body></html>

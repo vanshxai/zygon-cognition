@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exponent store - 3D</title>
+<style>
+:root{--bg:#06232B;--panel:#0A3440;--ink:#E6F5F7;--mute:#8CC3CC;--line:#1B6272;--acc:#14A9B8;--hi:#FFD166}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,sans-serif}
+h1{font-size:20px;margin:10px 16px 2px}.sub{margin:0 16px 8px;color:var(--mute);font-size:13px}
+#main{display:flex;gap:12px;padding:0 12px;flex-wrap:wrap}
+#cvwrap{position:relative;flex:1 1 640px;min-width:320px;height:600px;background:#041A20;border:1px solid var(--line);border-radius:8px}
+#cv{width:100%;height:100%;display:block;cursor:grab}#cv:active{cursor:grabbing}
+#tip{position:absolute;pointer-events:none;background:#000c;border:1px solid var(--line);padding:6px 8px;border-radius:6px;max-width:360px;font-size:12px;display:none}
+#side{flex:0 0 360px;display:flex;flex-direction:column;gap:10px;min-width:300px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.card h3{margin:0 0 6px;font-size:13px;letter-spacing:.5px;color:#9FE7EF}
+button,input[type=text]{background:#0E4B5A;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font:inherit}button{cursor:pointer}button:hover{background:#13677b}
+#qin{width:100%;margin-bottom:6px}
+#st{width:100%;height:210px;background:#041A20;border-radius:6px;display:block}
+.mono{font:12px/1.4 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.hit{margin:6px 0;padding:6px 8px;background:#06232B;border-left:3px solid var(--hi);border-radius:4px;font-size:13px}
+#doc{padding:6px 16px 40px;max-width:1200px}
+#doc h2{font-size:18px;margin:26px 0 6px;border-bottom:1px solid var(--line);padding-bottom:4px}
+table{border-collapse:collapse;margin:6px 0;font-size:13px}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left}th{background:#0A3440}
+td.n{text-align:right;font-family:Consolas,monospace}.sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.bad{color:#FFB27A}.good{color:#7CF2A0}.lg{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px}.lg span{cursor:pointer;user-select:none}.lg .off{opacity:.3}
+details{margin:4px 0}summary{cursor:pointer}
+</style></head><body>
+<h1>Exponent store: what the PDF turned into, in 3D</h1>
+<p class="sub" id="sub"></p>
+<div id="main">
+  <div id="cvwrap"><canvas id="cv"></canvas><div id="tip"></div></div>
+  <div id="side">
+    <div class="card"><h3>VIEW</h3>
+      <button id="bauto">Stop spin</button> <button id="bcur">Hide reply curves</button> <button id="bax">Hide box</button> <button id="breset">Reset view</button>
+      <div class="lg" id="legend"></div><div style="color:var(--mute);font-size:12px;margin-top:4px">drag = rotate, wheel = zoom, click a dot = select, legend = show/hide a topic. Each dot is one sentence of the PDF; each curve is a "tangent shot" from a sentence to the sentence that follows it (its stored reply).</div></div>
+    <div class="card"><h3>SELECTED SENTENCE</h3><div id="info" class="mono">click a dot</div><canvas id="st"></canvas><div style="color:var(--mute);font-size:12px">the staircase: each word of the sentence as a point at its own angle theta (atan2 of its stored y, x) and radius, one step up per word</div></div>
+    <div class="card"><h3>ASK THE STORE (no vector or matrix maths: looks words up, averages 3 numbers each, shoots to the nearest dots)</h3>
+      <input type="text" id="qin" placeholder="e.g. longest chain proof of work"><button id="qgo">Shoot</button><div id="qres"></div></div>
+  </div>
+</div>
+<div id="doc"></div>
+<script>
+const D = /*__DATA__*/null;
+const $ = s => document.querySelector(s);
+const COL = ['#9aa0a6','#14A9B8','#ffb454','#f2777a','#b48ead','#99c794','#fac863','#6699cc','#ec5f67','#c594c5','#5fb3b3','#e0e6ee','#f99157'];
+const P = D.points, SEC = D.sections, R = D.results;
+const cv = $('#cv'), cx = cv.getContext('2d');
+let W = 800, H = 600, DPR = 1, yaw = .7, pitch = .35, zoom = 1, auto = true, showCur = true, showBox = true, sel = -1, hov = -1, query = null, hits = [], hidden = new Set();
+function fit() { const r = cv.getBoundingClientRect(); DPR = window.devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * DPR; cv.height = H * DPR; cx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+addEventListener('resize', fit);
+function proj(p, w = W, h = H, yw = yaw, pt = pitch, zm = zoom) {
+  const cy = Math.cos(yw), sy = Math.sin(yw), cp = Math.cos(pt), sp = Math.sin(pt);
+  const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy, y1 = p[1] * cp - z1 * sp, z2 = p[1] * sp + z1 * cp;
+  const f = 3.2 / (3.2 + z2), s = Math.min(w, h) * .36 * zm; return [w / 2 + x1 * f * s, h / 2 - y1 * f * s, z2, f];
+}
+// a "tangent shot": a spiral that winds round the straight line A->B, with an exponentially growing radius (e^(k u) - 1)
+function shot(A, B, turns = 1.5) {
+  const d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], L = Math.hypot(...d) || 1e-6, u0 = d.map(v => v / L);
+  let a = Math.abs(u0[0]) < .9 ? [1, 0, 0] : [0, 1, 0]; const e1 = [u0[1] * a[2] - u0[2] * a[1], u0[2] * a[0] - u0[0] * a[2], u0[0] * a[1] - u0[1] * a[0]]; const n1 = Math.hypot(...e1); for (let i = 0; i < 3; i++) e1[i] /= n1;
+  const e2 = [u0[1] * e1[2] - u0[2] * e1[1], u0[2] * e1[0] - u0[0] * e1[2], u0[0] * e1[1] - u0[1] * e1[0]], pts = [], k = 3, amp = .12 * L;
+  for (let i = 0; i <= 28; i++) { const u = i / 28, r = amp * (Math.exp(k * u) - 1) / (Math.exp(k) - 1) * (1 - u) * 4, w = 2 * Math.PI * turns * u;
+    pts.push([A[0] + d[0] * u + r * (Math.cos(w) * e1[0] + Math.sin(w) * e2[0]), A[1] + d[1] * u + r * (Math.cos(w) * e1[1] + Math.sin(w) * e2[1]), A[2] + d[2] * u + r * (Math.cos(w) * e1[2] + Math.sin(w) * e2[2])]); }
+  return pts;
+}
+function line(pts, c, lw, al) { cx.beginPath(); pts.forEach((p, i) => { const q = proj(p); i ? cx.lineTo(q[0], q[1]) : cx.moveTo(q[0], q[1]); }); cx.strokeStyle = c; cx.globalAlpha = al; cx.lineWidth = lw; cx.stroke(); cx.globalAlpha = 1; }
+let screen = [];
+function draw() {
+  if (auto) yaw += .004;
+  cx.clearRect(0, 0, W, H);
+  if (showBox) { const c = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]; [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(([a, b]) => line([c[a], c[b]], '#1B6272', 1, .45));
+    [[[-1, 0, 0], [1, 0, 0], 'PC1'], [[0, -1, 0], [0, 1, 0], 'PC2'], [[0, 0, -1], [0, 0, 1], 'PC3']].forEach(([a, b, t]) => { line([a, b], '#2d8599', 1, .6); const q = proj(b); cx.fillStyle = '#8CC3CC'; cx.font = '11px system-ui'; cx.fillText(t, q[0] + 4, q[1] - 4); }); }
+  if (showCur) for (let i = 0; i < P.length - 1; i++) { if (hidden.has(P[i].sec) || hidden.has(P[i + 1].sec)) continue; const on = sel === i || sel === i + 1; line(shot(P[i].p, P[i + 1].p), COL[P[i].sec % COL.length], on ? 2.4 : 1, on ? .95 : .28); }
+  hits.forEach((h, k) => { if (query) line(shot(query.p, P[h.i].p, 2.2), k === 0 ? '#FFD166' : '#ffffff', 2.2 - k * .5, .9); });
+  screen = P.map((q, i) => { const s = proj(q.p); return {i, x: s[0], y: s[1], z: s[2], f: s[3]}; }).filter(s => !hidden.has(P[s.i].sec)).sort((a, b) => b.z - a.z);
+  screen.forEach(s => { const q = P[s.i], r = Math.max(1.2, (3 + Math.min(q.nw, 40) * .12) * s.f * zoom); cx.beginPath(); cx.arc(s.x, s.y, r, 0, 7); cx.fillStyle = COL[q.sec % COL.length]; cx.globalAlpha = Math.max(.45, Math.min(1, s.f * .95)); cx.fill(); cx.globalAlpha = 1;
+    if (s.i === sel || s.i === hov) { cx.lineWidth = 2; cx.strokeStyle = '#FFD166'; cx.stroke(); } });
+  if (query) { const s = proj(query.p); cx.beginPath(); cx.moveTo(s[0], s[1] - 10); cx.lineTo(s[0] + 8, s[1] + 6); cx.lineTo(s[0] - 8, s[1] + 6); cx.closePath(); cx.fillStyle = '#FFD166'; cx.fill(); cx.fillStyle = '#FFD166'; cx.font = '12px system-ui'; cx.fillText('your question', s[0] + 12, s[1]); }
+  drawStair();
+  requestAnimationFrame(draw);
+}
+// ---------------- interaction
+let drag = null;
+cv.addEventListener('mousedown', e => { drag = {x: e.clientX, y: e.clientY, moved: false}; auto = false; $('#bauto').textContent = 'Spin'; });
+addEventListener('mouseup', e => { if (drag && !drag.moved) pick(e); drag = null; });
+addEventListener('mousemove', e => { if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true; yaw += dx * .008; pitch = Math.max(-1.5, Math.min(1.5, pitch + dy * .008)); drag.x = e.clientX; drag.y = e.clientY; } hover(e); });
+cv.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(.4, Math.min(4, zoom * (e.deltaY < 0 ? 1.1 : .91))); }, {passive: false});
+function nearest(e) { const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top; let b = -1, bd = 16; for (let k = screen.length - 1; k >= 0; k--) { const s = screen[k], d = Math.hypot(s.x - mx, s.y - my); if (d < bd) { bd = d; b = s.i; } } return b; }
+function hover(e) { const r = cv.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { hov = -1; $('#tip').style.display = 'none'; return; }
+  hov = nearest(e); const t = $('#tip'); if (hov >= 0) { t.style.display = 'block'; t.style.left = Math.min(e.clientX - r.left + 14, r.width - 370) + 'px'; t.style.top = (e.clientY - r.top + 14) + 'px'; t.innerHTML = `<b style="color:${COL[P[hov].sec % COL.length]}">${esc(SEC[P[hov].sec])}</b><br>${esc(P[hov].text.slice(0, 190))}${P[hov].text.length > 190 ? '...' : ''}`; } else t.style.display = 'none'; }
+function pick(e) { const b = nearest(e); if (b >= 0) select(b); }
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function select(i) {
+  sel = i; const q = P[i], deg = a => (a * 180 / Math.PI).toFixed(1);
+  $('#info').innerHTML = `<b style="color:${COL[q.sec % COL.length]}">${esc(SEC[q.sec])}</b>  (sentence #${i})\n${esc(q.text)}\n\n<b>stored position</b>  r = e^${q.lnr.toFixed(4)} = ${Math.exp(q.lnr).toFixed(4)}\n  theta = ${deg(q.th)} deg   (tan theta = ${Math.tan(q.th).toFixed(3)})\n  phi = ${deg(q.ph)} deg\n<b>first stored numbers</b> (of 2048):  ${q.ex8.join('  ')}\n<b>reply link</b> -> ${i + 1 < P.length ? esc(P[i + 1].text.slice(0, 120)) + '...' : '(last sentence)'}`;
+}
+$('#bauto').onclick = () => { auto = !auto; $('#bauto').textContent = auto ? 'Stop spin' : 'Spin'; };
+$('#bcur').onclick = () => { showCur = !showCur; $('#bcur').textContent = showCur ? 'Hide reply curves' : 'Show reply curves'; };
+$('#bax').onclick = () => { showBox = !showBox; $('#bax').textContent = showBox ? 'Hide box' : 'Show box'; };
+$('#breset').onclick = () => { yaw = .7; pitch = .35; zoom = 1; };
+// legend
+$('#legend').innerHTML = SEC.map((s, i) => `<span data-i="${i}"><i class="sw" style="background:${COL[i % COL.length]}"></i>${esc(s)} (${D.centers[i].n})</span>`).join('');
+document.querySelectorAll('#legend span').forEach(el => el.onclick = () => { const i = +el.dataset.i; hidden.has(i) ? hidden.delete(i) : hidden.add(i); el.classList.toggle('off'); });
+// ---------------- the staircase of one sentence
+const sc = $('#st'), sx = sc.getContext('2d'); let sYaw = 0;
+const WORD = /[a-z0-9][a-z0-9\-']*/g;
+function drawStair() {
+  const r = sc.getBoundingClientRect(); if (sc.width !== r.width * DPR) { sc.width = r.width * DPR; sc.height = r.height * DPR; } sx.setTransform(DPR, 0, 0, DPR, 0, 0); const w = r.width, h = r.height; sx.clearRect(0, 0, w, h);
+  if (sel < 0) { sx.fillStyle = '#8CC3CC'; sx.font = '12px system-ui'; sx.fillText('select a dot to see its staircase', 12, 24); return; }
+  sYaw += .012; const ws = (P[sel].text.toLowerCase().match(WORD) || []).filter(x => D.words[x]), n = ws.length; if (!n) return;
+  const pts = ws.map((x, i) => { const c = D.words[x], th = Math.atan2(c[1], c[0]), rad = Math.min(1.4, Math.hypot(c[0], c[1]) * 1.2 + .15); return [rad * Math.cos(th), (i / (n - 1 || 1)) * 2 - 1, rad * Math.sin(th)]; });
+  const pr = p => proj(p, w, h, sYaw, .45, .62);
+  sx.beginPath(); pts.forEach((p, i) => { const q = pr(p); i ? sx.lineTo(q[0], q[1]) : sx.moveTo(q[0], q[1]); }); sx.strokeStyle = COL[P[sel].sec % COL.length]; sx.lineWidth = 1.6; sx.stroke();
+  const a0 = pr([0, -1, 0]), a1 = pr([0, 1, 0]); sx.beginPath(); sx.moveTo(a0[0], a0[1]); sx.lineTo(a1[0], a1[1]); sx.strokeStyle = '#2d8599'; sx.lineWidth = 1; sx.stroke();
+  pts.map((p, i) => ({q: pr(p), i})).sort((a, b) => b.q[2] - a.q[2]).forEach(({q, i}) => { sx.beginPath(); sx.arc(q[0], q[1], Math.max(.8, 2.6 * q[3]), 0, 7); sx.fillStyle = '#FFD166'; sx.fill(); if (n < 26 || i % 3 === 0) { sx.fillStyle = '#cfe'; sx.font = '9px system-ui'; sx.fillText(ws[i], q[0] + 4, q[1] - 3); } });
+}
+// ---------------- ask the store: word lookup -> average of 3 numbers per word -> nearest dots
+const inv = {}; P.forEach((q, i) => { new Set(q.text.toLowerCase().match(WORD) || []).forEach(w => (inv[w] = inv[w] || []).push(i)); });
+function ask() {
+  const ws = ($('#qin').value.toLowerCase().match(WORD) || []), known = ws.filter(w => D.words[w]), unk = ws.filter(w => !D.words[w]);
+  if (!known.length) { $('#qres').innerHTML = '<div class="hit">none of those words appear in the PDF, so the store has nothing to look up.</div>'; query = null; hits = []; return; }
+  let sw = 0, p = [0, 0, 0]; known.forEach(w => { const c = D.words[w], a = c[3]; sw += a; for (let k = 0; k < 3; k++) p[k] += a * c[k]; }); p = p.map(v => v / sw); query = {p};
+  hits = P.map((q, i) => ({i, d: Math.hypot(q.p[0] - p[0], q.p[1] - p[1], q.p[2] - p[2])})).sort((a, b) => a.d - b.d).slice(0, 3);
+  const sparse = new Array(P.length).fill(0); new Set(known).forEach(w => (inv[w] || []).forEach(i => sparse[i] += D.words[w][3])); const sb = sparse.indexOf(Math.max(...sparse));
+  $('#qres').innerHTML = `<div style="color:var(--mute);font-size:12px">position of your question: (${p.map(v => v.toFixed(3)).join(', ')})${unk.length ? ' | ignored (not in the PDF): ' + esc(unk.join(', ')) : ''}</div>` +
+    hits.map((h, k) => `<div class="hit" style="border-color:${k ? '#fff' : '#FFD166'}"><b>${k + 1}.</b> <span style="color:${COL[P[h.i].sec % COL.length]}">${esc(SEC[P[h.i].sec])}</span> (distance ${h.d.toFixed(3)})<br>${esc(P[h.i].text)}${k === 0 && h.i + 1 < P.length ? '<br><i style="color:var(--mute)">stored reply link: ' + esc(P[h.i + 1].text.slice(0, 150)) + '...</i>' : ''}</div>`).join('') +
+    `<div style="color:var(--mute);font-size:12px;margin-top:6px">for comparison, a plain word index (no numbers at all) would return sentence #${sb} (${esc(SEC[P[sb].sec])}): ${esc(P[sb].text.slice(0, 110))}...</div>`;
+  select(hits[0].i);
+}
+$('#qgo').onclick = ask; $('#qin').onkeydown = e => { if (e.key === 'Enter') ask(); };
+// ---------------- documentation under the 3D view
+const pc = x => (100 * x).toFixed(1) + '%', f2 = x => (+x).toPrecision(3);
+(function doc() {
+  const p1 = R.part1, rs = R.retrieval, sz = R.sizes, cl = R.clusters, d = $('#doc'), t3 = rs.rows.find(r => r.method.startsWith('3D')), wi = rs.rows[0], full = rs.rows[1], l8 = rs.rows[2], r32 = rs.rows.find(r => r.method.startsWith('only 32')), r128 = rs.rows.find(r => r.method.startsWith('only 128'));
+  $('#sub').textContent = `Source: ${D.pdf.name} (${D.pdf.pages} pages, ${D.pdf.bytes.toLocaleString()} bytes, ${D.pdf.source}). ${P.length} sentences learned in ${R.timing.learn_seconds} s, in ${SEC.length} topics (the PDF's own section titles).`;
+  let h = `<h2>What this is</h2><p>The 9-page PDF was cut into ${P.length} sentences. Each sentence became 2048 numbers (the average of its words' embeddings from the Frost model's own embedding table, weighted so rare words count more). Those numbers were written as <b>sign + e^x</b> (x = ln of the number), packed into text, and read back from the text file. Each sentence also got a 3D position: the three strongest directions of variation (PC1, PC2, PC3), written as r = e^x, an angle theta (tan theta = y/x) and an angle phi. A curve (spiral "shot") joins every sentence to the sentence that follows it. Colours are the PDF's section titles.</p>`;
+  h += `<h2>Clusters (topics) in the 3D view</h2><table><tr><th>colour</th><th>topic (PDF section)</th><th>sentences</th><th>centre (PC1, PC2, PC3)</th><th>first sentence</th></tr>` + D.centers.map((c, i) => `<tr><td><i class="sw" style="background:${COL[i % COL.length]}"></i></td><td>${esc(c.name)}</td><td class="n">${c.n}</td><td class="n">${c.c.join(', ')}</td><td>${esc(c.first.slice(0, 110))}...</td></tr>`).join('') + `</table>`;
+  h += `<p>Do similar topics sit together? For each sentence, the nearest other sentence in 3D is from the same section ${pc(cl.nn_same_section_3D)} of the time (chance ${pc(cl.chance)}; using all 2048 numbers: ${pc(cl.nn_same_section_2048)}). The three axes together carry only ${pc(cl.pca_variance_first3.reduce((a, b) => a + b, 0))} of the variation, so 3D shows a loose grouping, not clean islands.</p>`;
+  h += `<h2>Test 1: does writing a number as e^x compress it?</h2><p>Exact arithmetic (Python decimal, 400 digits). A random number v with 300 decimal digits (${p1.random_300_digit_number.v_text_chars} characters as text). Keep only d decimals of x = ln v, then rebuild v = e^x:</p><table><tr><th>digits of x kept</th><th>characters of x</th><th>leading digits of v that come out right</th></tr>` + p1.random_300_digit_number.rows.map(r => `<tr><td class="n">${r.x_digits}</td><td class="n">${r.x_text_chars}</td><td class="n">${r.correct_digits_of_v}</td></tr>`).join('') + `</table>`;
+  h += `<p>Each digit of x buys about one correct digit of v, so x needs as many digits as v. Nothing is saved for arbitrary numbers. The special case in your document, 10^10,000,000 = e^${p1.ten_to_ten_million.exact_exponent}...:</p><table><tr><th>stored text</th><th>bytes</th><th>leading digits right (of 10,000,001)</th></tr>` + p1.ten_to_ten_million.rows.map(r => `<tr><td class="mono">${esc(r.x_text)}</td><td class="n">${r.bytes}</td><td class="n">${r.correct_leading_digits}</td></tr>`).join('') + `</table><p class="bad">13 bytes name the number only to about 4 of its 10 million digits. It is a short name for one special number, not a compressed copy of arbitrary data.</p>`;
+  h += `<h2>Test 2: the 2048 embedding numbers of a sentence, stored as e^x</h2><table><tr><th>format</th><th>bytes per sentence</th><th>vs original (cosine / median relative error)</th></tr>
+   <tr><td>float32 (original)</td><td class="n">${sz.float32_bytes}</td><td>exact</td></tr><tr><td>float64</td><td class="n">${sz.float64_bytes}</td><td>exact</td></tr>
+   <tr><td>decimal text, 8 digits</td><td class="n">${sz.decimal_text_8digits_bytes}</td><td>~1e-8</td></tr><tr><td>e^x as text, 6 decimals</td><td class="n">${sz.exponent_text_e_x_6decimals_bytes || sz['exponent_text_e^x_6decimals_bytes']}</td><td>~1e-6</td></tr>
+   <tr><td>e^x, 16-bit codes</td><td class="n">${sz.log16_binary_bytes}</td><td>${sz.cos_restored_vs_original.log16.toFixed(6)} / ${sz.median_relative_error.log16.toExponential(1)}</td></tr>
+   <tr><td>e^x, 8-bit codes (binary)</td><td class="n">${sz.log8_binary_bytes}</td><td>${sz.cos_restored_vs_original.log8.toFixed(5)} / ${sz.median_relative_error.log8.toExponential(1)}</td></tr>
+   <tr><td>e^x, 8-bit codes as hex text (the store file)</td><td class="n">${sz.log8_hex_text_bytes}</td><td>same as above</td></tr>
+   <tr><td>plain linear int8 (for comparison)</td><td class="n">${sz.float32_bytes / 4}</td><td>${sz.cos_restored_vs_original.linear_int8.toFixed(5)} / ${sz.median_relative_error.linear_int8.toExponential(1)}</td></tr>
+   <tr><td>position only: r = e^x, theta, phi (3 x 16-bit)</td><td class="n">${sz.position_only_bytes_binary}</td><td>3 numbers per sentence</td></tr></table>
+   <p>The 8-bit e^x codes shrink the numbers 4x (8192 to 2048 bytes) and keep the same search results (below). The ordinary 8-bit integer format shrinks them the same amount with the same error, so the e^x form is not better, just equal. The whole store file is ${sz.store_file_bytes.toLocaleString()} bytes, against ${sz.text_of_sentences_bytes.toLocaleString()} bytes for the sentences themselves: the numbers cost much more than the text they describe.</p>`;
+  h += `<h2>Test 3: finding the right sentence again</h2><p>${rs.n_queries} questions made from the sentences (6 consecutive words, or 4 random words from it). Top 1 = the exact sentence came first. Chance = ${pc(rs.chance_top1)}.</p><table><tr><th>method</th><th>top 1</th><th>top 5</th><th>right section</th><th>6 words</th><th>4 keywords</th></tr>` +
+    rs.rows.map(r => `<tr><td>${esc(r.method)}</td><td class="n ${r.top1 > .8 ? 'good' : r.top1 < .3 ? 'bad' : ''}">${pc(r.top1)}</td><td class="n">${pc(r.top5)}</td><td class="n">${pc(r.right_section_top1)}</td><td class="n">${pc(r.top1_by_query_type['6 consecutive words'])}</td><td class="n">${pc(r.top1_by_query_type['4 random keywords'])}</td></tr>`).join('') + `</table>`;
+  h += `<h2>Verdict</h2><ul>
+   <li class="bad">Compression: e^x does not compress arbitrary numbers (x needs as many digits as the number). It only gives a short name to special numbers, and then only the first few digits survive.</li>
+   <li class="good">What works: the 8-bit e^x store keeps the search results identical to the full numbers (${pc(l8.top1)} vs ${pc(full.top1)} top 1) at a quarter of the memory. Plain 8-bit integers do the same.</li>
+   <li class="bad">Retrieval from the 3D position alone (shooting to the nearest dot): ${pc(t3.top1)} top 1, ${pc(t3.right_section_top1)} right section. Three numbers cannot hold a sentence's meaning. With ${r32 ? r32.method.split(' ')[1] : 32} numbers it reaches ${pc(r32.top1)}, with ${r128.method.split(' ')[1]} numbers ${pc(r128.top1)} (the full result is ${pc(full.top1)}).</li>
+   <li>A plain word index with no numbers at all finds ${pc(wi.top1)}, better than every number-based method here. That is the standard against which this memory has to be judged.</li>
+   <li>No generalisation was tested: all questions are fragments of stored sentences. A genuinely new question has nothing stored to find, so the model's own matrix maths is still needed to write a new answer.</li></ul>`;
+  d.innerHTML = h;
+})();
+fit(); requestAnimationFrame(draw);
+</script></body></html>

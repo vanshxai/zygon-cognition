@@ -1,0 +1,12 @@
+{
+ "words": 20345,
+ "common": 20000,
+ "ours": 345,
+ "angles_per_word": 64,
+ "numbers": 1302080,
+ "recall10_random": 0.33799999999999997,
+ "recall10_pca": 0.5045,
+ "method": "pca",
+ "seconds": 62.9,
+ "bytes_npz": 4984704
+}

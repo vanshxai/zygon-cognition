@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZYGON</title>
+<style>
+:root{--side:#0A5C6E;--side3:#0E7389;--acc:#14A9B8;--bg:#E8F2F4;--card:#fff;--ink:#0B2E38;--mute:#5F8590;--line:#CBE0E5;--hi:#E6A817}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:14px/1.45 system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
+#top{background:var(--side);color:#fff;padding:8px 16px;display:flex;gap:14px;align-items:center;flex:none}
+#top b{font-size:18px}#top span{font-size:12px;opacity:.85}
+#alert{display:none;background:#B3442F;color:#fff;padding:8px 16px;flex:none}#alert button{margin-left:10px}
+#cols{flex:1;display:flex;gap:12px;padding:12px;min-height:0}
+#chat{flex:1 1 52%;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:320px;min-height:0}
+#msgs{flex:1;overflow-y:auto;padding:14px}
+.m{margin:10px 0;display:flex;flex-direction:column}.m.u{align-items:flex-end}
+.b{max-width:88%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+.u .b{background:var(--side3);color:#fff}.a .b{background:#F2F8F9;border:1px solid var(--line)}
+.meta{font-size:11px;color:var(--mute);margin-top:3px}.meta button{border:1px solid var(--line);background:#fff;border-radius:5px;cursor:pointer;margin-left:6px;font-size:11px}
+.badge{display:inline-block;padding:0 7px;border-radius:9px;color:#fff;font-size:11px}
+.s-memory{background:#2e8b57}.s-wheels{background:#14A9B8}.s-3B{background:#d35400}.s-none{background:#7f8c8d}
+#bar{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}#inp{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:none}
+button.go{background:var(--side);color:#fff;border:0;border-radius:8px;padding:0 18px;font:inherit;font-weight:600;cursor:pointer}
+#dash{flex:1 1 48%;overflow-y:auto;display:flex;flex-direction:column;gap:10px;min-width:320px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.card h3{margin:0 0 6px;font-size:12px;letter-spacing:1px;color:var(--side)}
+.bar{height:14px;background:#dcebee;border-radius:7px;overflow:hidden;margin:4px 0}.bar i{display:block;height:100%;background:var(--acc)}.bar.warn i{background:#B3442F}
+table{border-collapse:collapse;font-size:12px;width:100%}td,th{border-bottom:1px solid var(--line);padding:3px 5px;text-align:left}td.n{text-align:right;font-family:Consolas,monospace}
+.kv{display:flex;gap:16px;flex-wrap:wrap}.kv div{min-width:90px}.kv b{display:block;font-size:20px}.kv span{font-size:11px;color:var(--mute)}
+#series{display:flex;gap:2px;flex-wrap:wrap;margin-top:6px}#series i{width:9px;height:14px;border-radius:2px}
+#win{max-height:190px;overflow-y:auto;font:12px/1.35 Consolas,monospace}#win div{border-bottom:1px dotted var(--line);padding:2px 0}
+details{margin:0}summary{cursor:pointer;font-weight:600;font-size:12px;letter-spacing:1px;color:var(--side)}
+input[type=text],input[type=number],textarea{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;width:100%}
+.btn{background:var(--side3);color:#fff;border:0;border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit}
+canvas{background:#fff}.rej{color:#B3442F;cursor:pointer;border:0;background:none;font-size:12px}
+</style></head><body>
+<div id="top"><b>ZYGON</b><span>exponent identities, angle wheels, hooks. Learns from the 3B model while you chat. No matrices.</span><span id="model"></span></div>
+<div id="alert"></div>
+<div id="cols">
+  <div id="chat"><div id="msgs"><div class="meta">Ask anything. A question the AI already knows is answered at once from memory; a similar one from its wheels; anything new is answered by the 3B model and learned on the spot. A reply stays learned unless you press Reject.</div></div>
+    <div id="bar"><textarea id="inp" rows="2" placeholder="Ask ZYGON..."></textarea><button class="go" id="send">Send</button></div></div>
+  <div id="dash">
+    <div class="card"><h3>MEMORY</h3><div class="bar" id="mbar"><i></i></div><div id="mtxt"></div><table id="mparts"></table>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center">notify me above <input type="number" id="thr" step="1" min="0.01" style="width:90px"> MB <button class="btn" id="thrsave">Save</button></div></div>
+    <div class="card"><h3>WHAT IT KNOWS</h3><div class="kv" id="kv"></div><div style="font-size:11px;color:var(--mute);margin-top:6px">last 80 answers: <span style="color:#2e8b57">green = memory</span>, <span style="color:#14A9B8">teal = wheels</span>, <span style="color:#d35400">orange = 3B model</span>, grey = not learned</div><div id="series"></div></div>
+    <div class="card"><h3>METRICS</h3><div id="met"></div></div>
+    <div class="card"><h3>LEARNING WINDOW (newest first)</h3><div id="win"></div></div>
+    <div class="card"><details id="cubed"><summary>EXPONENT CUBE (10 x 10 x 10)</summary><div style="margin-top:6px">
+      <div id="cvw" style="position:relative;width:100%;height:420px;background:#06232B;border-radius:6px"><canvas id="cv" style="width:100%;height:100%;display:block;cursor:grab"></canvas><div id="tip" style="position:absolute;display:none;pointer-events:none;background:#000c;color:#fff;border:1px solid #1B6272;padding:5px 8px;font-size:12px;border-radius:5px"></div></div>
+      <div id="cinfo" style="background:#eef6f7;padding:6px 8px;margin-top:6px;font-size:12px;min-height:34px">Each token's exponent sits in its own cell, in the order it was first read. The box is only a picture; nothing computes with it. Drag to rotate, wheel to zoom, click a cell.</div>
+      <div id="cmeta" style="font-size:11px;color:var(--mute);margin:4px 0"></div>
+      <button class="btn" id="cb1">Stop spin</button> <button class="btn" id="cb2">Hide relations</button> <button class="btn" id="cb3">Reset view</button></div></details></div>
+    <div class="card"><details><summary>WHEEL VIEWER</summary><div style="margin-top:6px"><input type="text" id="wtxt" placeholder="type the start of a sentence, e.g. The capital of"><canvas id="wc" width="300" height="300" style="margin-top:6px"></canvas><div id="wtab"></div></div></details></div>
+    <div class="card"><details><summary>TOKEN IDENTITIES (e^x)</summary><div style="margin-top:6px"><input type="text" id="itxt" placeholder="type a word or sentence"><div id="itab"></div></div></details></div>
+    <div class="card"><details><summary>TEACH IT (text or file)</summary><div style="margin-top:6px"><textarea id="ttxt" rows="3" placeholder="paste text to learn"></textarea><input type="text" id="tpath" placeholder="or a file on this PC: C:\path\file.pdf or .txt" style="margin-top:4px"><button class="btn" id="tgo" style="margin-top:6px">Learn it</button> <span id="tres"></span></div></details></div>
+    <div class="card"><details><summary>LEARNED REPLIES (reject any you don't like)</summary><div id="paths" style="margin-top:6px"></div></details></div>
+  </div>
+</div>
+<script src="/cube_view.js"></script>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const api = (u, b) => fetch(u, b === undefined ? {} : {method: 'POST', body: JSON.stringify(b)}).then(r => r.json());
+const MB = 1048576, SRC = {memory: '#2e8b57', wheels: '#14A9B8', '3B model': '#d35400', none: '#7f8c8d'};
+let busy = false;
+function msg(role, text, meta) { const d = document.createElement('div'); d.className = 'm ' + (role === 'u' ? 'u' : 'a'); d.innerHTML = '<div class="b"></div>'; d.firstChild.textContent = text; if (meta !== undefined) { const m = document.createElement('div'); m.className = 'meta'; d.appendChild(m); } $('#msgs').appendChild(d); $('#msgs').scrollTop = 1e9; return d; }
+async function send() {
+  const q = $('#inp').value.trim(); if (!q || busy) return; busy = true; $('#inp').value = ''; $('#send').textContent = '...';
+  msg('u', q); const d = msg('a', 'thinking (a new question goes to the 3B model, up to a minute)...', '');
+  try {
+    const r = await api('/api/angle/ask', {q}); const m = d.querySelector('.meta');
+    if (r.error) { d.firstChild.textContent = r.error; }
+    else if (r.source === 'none') { d.firstChild.textContent = r.message + (r.draft ? '\n\n(the wheels would have said: ' + r.draft.slice(0, 160) + ')' : ''); m.innerHTML = '<span class="badge s-none">not learned</span> ' + esc(r.reason || ''); }
+    else {
+      d.firstChild.textContent = r.reply; const cls = r.source === 'memory' ? 'memory' : r.source === 'wheels' ? 'wheels' : '3B';
+      m.innerHTML = `<span class="badge s-${cls}">${esc(r.source)}</span> ${r.source === 'memory' ? 'instant, ' + r.ms + ' ms' : r.source === 'wheels' ? 'wheel confidence ' + (100 * r.confidence).toFixed(0) + '%' : (r.reason ? esc(r.reason) + ' | ' : '') + 'learned'} | path #${r.path_id} `;
+      const b = document.createElement('button'); b.textContent = 'Reject'; b.onclick = async () => { await api('/api/angle/reject', {id: r.path_id}); b.textContent = 'rejected, forgotten'; b.disabled = true; load(); }; m.appendChild(b);
+    }
+  } catch (e) { d.firstChild.textContent = 'Connection problem: ' + e; }
+  busy = false; $('#send').textContent = 'Send'; load();
+}
+$('#send').onclick = send; $('#inp').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+async function load() {
+  const [s, st] = await Promise.all([api('/api/angle/state'), api('/api/state')]);
+  $('#model').textContent = st.loaded ? '3B model: loaded (teacher ready)' : '3B model: not loaded (new questions cannot be learned; press Load Frost 1.0 in the Frost sidebar)';
+  const used = s.memory.total, thr = s.threshold_bytes, pct = Math.min(100, 100 * used / thr);
+  $('#mbar').className = 'bar' + (s.alert_active ? ' warn' : ''); $('#mbar').firstChild.style.width = pct + '%';
+  $('#mtxt').innerHTML = `<b>${(used / MB).toFixed(3)} MB</b> of ${(thr / MB).toFixed(2)} MB threshold (${pct.toFixed(1)}%)`;
+  $('#mparts').innerHTML = Object.entries(s.memory.parts).map(([k, v]) => `<tr><td>${k}</td><td class="n">${(v / 1024).toFixed(1)} KB</td></tr>`).join('');
+  if (document.activeElement !== $('#thr')) $('#thr').value = s.settings.memory_threshold_mb;
+  const al = $('#alert'); if (s.alert_active) { al.style.display = 'block'; al.innerHTML = esc(s.alerts.length ? s.alerts[s.alerts.length - 1].text : 'Memory threshold crossed.') + ' <button class="btn" id="dbl">Double the threshold</button>'; $('#dbl').onclick = async () => { await api('/api/angle/settings', {memory_threshold_mb: s.settings.memory_threshold_mb * 2}); load(); }; } else al.style.display = 'none';
+  const mt = s.metrics, fmt = x => x === null || x === undefined ? '-' : x < 10 ? x.toFixed(2) : x < 1000 ? x.toFixed(0) : (x / 1000).toFixed(1) + ' s', kb2 = b => b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(2) + ' MB';
+  const rows = Object.entries(mt.ask).map(([k2, a]) => `<tr><td>${k2}</td><td class="n">${a.n}</td><td class="n">${fmt(a.mean_ms)} ms</td><td class="n">${fmt(a.min_ms)} ms</td><td class="n">${fmt(a.max_ms)} ms</td></tr>`).join('');
+  $('#met').innerHTML = `<table><tr><th>answered by</th><th>count</th><th>mean</th><th>fastest</th><th>slowest</th></tr>${rows || '<tr><td colspan=5>no answers yet</td></tr>'}</table>
+    <table style="margin-top:6px"><tr><td>learned</td><td class="n">${mt.tokens_learned.toLocaleString()} tokens in ${mt.learn_seconds.toFixed(3)} s</td></tr><tr><td>learning speed</td><td class="n">${mt.learn_tokens_per_s ? Math.round(mt.learn_tokens_per_s).toLocaleString() + ' tokens/s' : '-'}</td></tr>
+    <tr><td>memory (structures)</td><td class="n">${kb2(mt.memory_bytes)}${mt.bytes_per_token ? ' (' + mt.bytes_per_token.toFixed(1) + ' B per token)' : ''}</td></tr><tr><td>on disk (log + metrics)</td><td class="n">${kb2(mt.disk_bytes)}</td></tr>
+    <tr><td>per learned reply</td><td class="n">${mt.bytes_per_learned_reply ? Math.round(mt.bytes_per_learned_reply) + ' B' : '-'}</td></tr><tr><td>time saved against asking the 3B model every time</td><td class="n">${mt.time_saved_s === null ? '-' : mt.time_saved_s.toFixed(0) + ' s'}</td></tr><tr><td>running for</td><td class="n">${Math.round(mt.uptime_s)} s this session</td></tr></table>`;
+  const k = s.memory, t = s.stats;
+  $('#kv').innerHTML = [['tokens known', s.tokens_known], ['wheels', k.wheels], ['sectors', k.sectors], ['hooks', k.hooks], ['learned replies', k.paths], ['from memory', t.memory], ['from wheels', t.wheels], ['from 3B model', t.teacher], ['rejected', t.rejected]].map(([a, b]) => `<div><b>${b}</b><span>${a}</span></div>`).join('');
+  $('#series').innerHTML = s.series.map(x => `<i title="${x}" style="background:${SRC[x] || '#7f8c8d'}"></i>`).join('');
+  $('#win').innerHTML = s.window.map(w => `<div>${new Date(w.time * 1000).toLocaleTimeString()}  ${esc(w.text)}</div>`).join('') || 'nothing learned yet in this session';
+  $('#paths').innerHTML = '<table>' + s.paths_list.map(p => `<tr><td>#${p.id}</td><td>${esc(p.prompt)}</td><td>${esc(p.source)}</td><td class="n">${p.hits}</td><td><button class="rej" data-id="${p.id}">Reject</button></td></tr>`).join('') + '</table>';
+  document.querySelectorAll('.rej').forEach(b => b.onclick = async () => { await api('/api/angle/reject', {id: +b.dataset.id}); load(); });
+}
+$('#thrsave').onclick = async () => { await api('/api/angle/settings', {memory_threshold_mb: +$('#thr').value}); load(); };
+// ---- wheel viewer
+const COL = ['#0A6C80', '#c0392b', '#e6a817', '#6a4c93', '#2e8b57', '#d35400', '#7f8c8d', '#2980b9', '#16a085', '#8e44ad'];
+async function wheel() {
+  const w = await api('/api/angle/wheel?text=' + encodeURIComponent($('#wtxt').value)), c = $('#wc').getContext('2d'); c.clearRect(0, 0, 300, 300);
+  let a = -Math.PI / 2; w.sectors.forEach((x, i) => { const sw = x.share * Math.PI * 2; c.beginPath(); c.moveTo(150, 150); c.arc(150, 150, 130, a, a + sw); c.closePath(); c.fillStyle = COL[i % 10]; c.globalAlpha = .85; c.fill(); c.globalAlpha = 1; c.strokeStyle = '#fff'; c.stroke(); if (sw > .3) { const m = a + sw / 2; c.fillStyle = '#fff'; c.font = '11px Consolas'; c.textAlign = 'center'; c.fillText(x.token.trim().slice(0, 10), 150 + Math.cos(m) * 85, 150 + Math.sin(m) * 85); } a += sw; });
+  $('#wtab').innerHTML = w.sectors.length ? `<div style="font-size:11px;color:var(--mute);margin:4px 0">context ${esc(w.context.join(' | '))} (order ${w.order}, seen ${w.n} times)</div><table><tr><th>next</th><th>identity</th><th>share</th><th>sector</th></tr>` + w.sectors.map(x => `<tr><td>${esc(JSON.stringify(x.token))}</td><td>${x.identity}</td><td class="n">${(100 * x.share).toFixed(1)}%</td><td class="n">${x.from}-${x.to}</td></tr>`).join('') + '</table>' : 'no wheel for this yet';
+}
+$('#wtxt').oninput = wheel;
+$('#itxt').oninput = async () => { const r = await api('/api/angle/ident?text=' + encodeURIComponent($('#itxt').value)); $('#itab').innerHTML = '<table><tr><th>piece</th><th>id</th><th>identity</th><th>decodes to</th></tr>' + r.map(x => `<tr><td>${esc(JSON.stringify(x.piece))}</td><td class="n">${x.id}</td><td>${x.identity}</td><td class="n">${x.decoded}</td></tr>`).join('') + '</table>'; };
+$('#tgo').onclick = async () => { $('#tres').textContent = 'learning...'; const r = await api('/api/angle/teach', {text: $('#ttxt').value, path: $('#tpath').value}); $('#tres').textContent = r.error ? r.error : `learned ${r.tokens} tokens from ${r.label}`; load(); };
+const cube = makeCube($('#cv'), $('#tip'), $('#cinfo'));
+async function loadCube() { const d = await api('/api/angle/cube'); cube.setData(d); $('#cmeta').textContent = d.shown + ' of ' + d.tokens_known + ' tokens are in the box. Colour = how often the token was read (blue rare, red frequent).'; }
+$('#cubed').addEventListener('toggle', () => { if ($('#cubed').open) { cube.fit(); loadCube(); } });
+$('#cb1').onclick = e => { e.target.textContent = cube.toggleSpin() ? 'Stop spin' : 'Spin'; }; $('#cb2').onclick = e => { e.target.textContent = cube.toggleRel() ? 'Hide relations' : 'Show relations'; }; $('#cb3').onclick = () => cube.reset();
+load(); wheel(); setInterval(() => { if ($('#cubed').open && !busy) loadCube(); }, 15000); setInterval(() => { if (!busy) load(); }, 4000);
+</script></body></html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frost 1.0 - neurons vs prompt size (3D map)</title>
+<style>
+:root{--pea:#0A5C6E;--acc:#14A9B8;--bg:#E8F2F4;--line:#CBE0E5;--ink:#0B2E38}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.4 Consolas,monospace;background:var(--bg);color:var(--ink)}
+header{background:var(--pea);color:#fff;padding:12px 18px}
+header h1{margin:0;font:700 18px system-ui,Segoe UI,sans-serif}
+header div{font:12px system-ui,Segoe UI,sans-serif;color:#BFE6EC;margin-top:3px}
+main{padding:12px 16px 40px}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+button{font:inherit;border:1px solid var(--pea);background:#fff;color:var(--pea);border-radius:8px;padding:4px 11px;cursor:pointer}
+button.on{background:var(--pea);color:#fff}
+#c{display:block;width:100%;height:auto;background:#000;border-radius:10px;cursor:grab;border:1px solid #06303a}
+pre{margin:6px 0;white-space:pre;overflow-x:auto;font:inherit}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:10px 0}
+.k{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+#hover{min-height:1.4em;white-space:pre}
+</style></head><body>
+<header><h1>Frost 1.0 &mdash; neurons triggered vs prompt size (3D map)</h1>
+<div>10 prompts from the smallest to the biggest. Every dot is an MLP neuron: 36 layers &times; 11,008 = 396,288. Gold = the text-reply neurons found by the text-vs-code scan.</div></header>
+<main>
+<div class="ctl"><b>prompt</b> <span id="btns"></span> <button id="prev">&larr;</button><button id="next">&rarr;</button><button id="play">&#9654; play small &rarr; big</button>
+ &nbsp; <b>show</b> <button id="m1" class="on">token that starts the reply</button><button id="m2">whole prompt (every token)</button>
+ &nbsp; <button id="v1">side</button><button id="v2">top</button><button id="v3">perspective</button> <label><input type="checkbox" id="spin"> auto-rotate</label></div>
+<div class="card"><pre id="ptext"></pre><pre id="stats"></pre></div>
+<canvas id="c" width="1700" height="900"></canvas>
+<div id="hover">hover a bright dot for its details &nbsp;|&nbsp; drag to rotate, wheel to zoom</div>
+<div class="card"><pre id="legend"></pre></div>
+<div class="card"><pre id="table"></pre></div>
+</main>
+<script id="d" type="application/json">/*__DATA__*/null</script>
+<script>
+const D = JSON.parse(document.getElementById('d').textContent), $ = s => document.querySelector(s), N = x => Math.round(x).toLocaleString();
+const NL = D.layers, F = D.ffn, COLS = 128, ROWS = F / COLS, CS = 1.6, GAP = 22;
+const u8 = s => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const offs = c => { const o = [0]; c.forEach(x => o.push(o[o.length - 1] + x)); return o; };
+const textIdx = new Uint16Array(u8(D.text_idx).buffer), textOff = offs(D.text_cnt), textMask = new Uint8Array(NL * F);
+for (let l = 0; l < NL; l++) for (let i = textOff[l]; i < textOff[l + 1]; i++) textMask[l * F + textIdx[i]] = 1;
+const R = D.rows; R.forEach(r => { r.last = new Uint16Array(u8(r._last_idx).buffer); r.lastVal = new Int8Array(u8(r._last_val).buffer); r.lastOff = offs(r._last_cnt); r.union = new Uint16Array(u8(r._union_idx).buffer); r.unionOff = offs(r._union_cnt); });
+let cur = 0, mode = 1, yaw = 0.42, pitch = 0.3, zoom = 1.45, drag = false, nodes = [], pick = null, timer = null;
+const c = $('#c'), g = c.getContext('2d');
+function proj(x, y, z) { const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy, y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp, s = 900 / (900 + z2) * zoom;
+  return [c.width / 2 + x1 * s, c.height / 2 + y2 * s, s]; }
+const pos = (l, i) => [(l - NL / 2) * GAP, ((i >> 7) - ROWS / 2) * CS, ((i & 127) - COLS / 2) * CS];
+
+function render() {
+  const r = R[cur]; nodes = [];
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'lighter';
+  for (let l = 0; l < NL; l++) {                                           // plane outlines + faint dots for every 16th neuron
+    const x = (l - NL / 2) * GAP, q = [[-ROWS / 2, -COLS / 2], [-ROWS / 2, COLS / 2], [ROWS / 2, COLS / 2], [ROWS / 2, -COLS / 2]].map(([a, b]) => proj(x, a * CS, b * CS));
+    g.strokeStyle = 'rgba(70,110,135,0.45)'; g.beginPath(); q.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.stroke();
+    g.fillStyle = 'rgba(100,140,170,0.22)';
+    for (let i = 0; i < F; i += 16) { const p = pos(l, i), s = proj(p[0], p[1], p[2]); g.fillRect(s[0], s[1], 1, 1); }
+  }
+  g.fillStyle = 'rgba(255,190,50,0.85)';                                    // the text-reply neurons (always shown)
+  for (let l = 0; l < NL; l++) for (let k = textOff[l]; k < textOff[l + 1]; k++) { const p = pos(l, textIdx[k]), s = proj(p[0], p[1], p[2]); g.fillRect(s[0] - 1, s[1] - 1, 2.6 * s[2], 2.6 * s[2]); }
+  const idx = mode === 1 ? r.last : r.union, off = mode === 1 ? r.lastOff : r.unionOff;
+  for (let l = 0; l < NL; l++) for (let k = off[l]; k < off[l + 1]; k++) {   // triggered neurons
+    const i = idx[k], p = pos(l, i), s = proj(p[0], p[1], p[2]), isT = textMask[l * F + i], v = mode === 1 ? Math.abs(r.lastVal[k]) / 127 : 0.6;
+    if (isT) { g.fillStyle = 'rgba(255,255,255,0.95)'; const z = 4.2 * s[2]; g.fillRect(s[0] - z / 2, s[1] - z / 2, z, z); nodes.push([s[0], s[1], l, i, 1, mode === 1 ? r.lastVal[k] : 0]); }
+    else { g.fillStyle = `rgba(60,${180 + 60 * v | 0},${210 + 40 * v | 0},${0.35 + 0.5 * v})`; const z = (1.3 + 1.6 * v) * s[2]; g.fillRect(s[0] - z / 2, s[1] - z / 2, z, z); if (v > 0.35 || mode === 2) nodes.push([s[0], s[1], l, i, 0, mode === 1 ? r.lastVal[k] : 0]); }
+  }
+  g.globalCompositeOperation = 'source-over'; g.textAlign = 'left';
+  g.fillStyle = '#9ab'; g.font = '13px Consolas,monospace';
+  for (let l = 0; l < NL; l += 5) { const s = proj((l - NL / 2) * GAP, -ROWS / 2 * CS - 6, 0); g.fillText('L' + l, s[0] - 7, s[1]); }
+  let s = proj((-NL / 2 - 1.5) * GAP, -ROWS / 2 * CS - 22, 0); g.fillStyle = '#ffd54a'; g.font = '18px system-ui,sans-serif'; g.fillText(`INPUT: prompt ${cur + 1} of 10 (${r.content_tokens} word-pieces)`, s[0], s[1]);
+  s = proj((NL / 2 - 6) * GAP, -ROWS / 2 * CS - 22, 0); g.fillStyle = '#7dff8a'; g.fillText('OUTPUT: text reply', s[0], s[1]);
+  if (pick) { g.strokeStyle = '#ff0'; g.strokeRect(pick[0] - 6, pick[1] - 6, 12, 12); }
+}
+function info() {
+  const r = R[cur], m = mode === 1 ? r.trig_last : r.trig_union, tt = mode === 1 ? r.text_set_last : r.text_set_union, tot = NL * F;
+  $('#ptext').textContent = `PROMPT ${cur + 1}/10  (${r.content_tokens} word-pieces; ${r.total_tokens} with the chat wrapper)\n"${r.text.length > 260 ? r.text.slice(0, 260) + ' ...' : r.text}"`;
+  $('#stats').textContent =
+`neurons triggered ${mode === 1 ? 'at the token that starts the reply' : 'anywhere in the prompt'} .. ${N(m)} of ${N(tot)}  (${(100 * m / tot).toFixed(2)}%)
+average triggered per token ............ ${N(r.avg_per_token)}  (${(100 * r.avg_per_token / tot).toFixed(2)}%)
+text-reply neurons among them ......... ${N(tt)} of ${N(r.text_set_size)}  (${(100 * tt / r.text_set_size).toFixed(1)}% of the text-reply set switched on)
+share of the triggered neurons that are text-reply ones: ${(100 * tt / Math.max(m, 1)).toFixed(2)}%   (the set is only ${(100 * r.text_set_size / tot).toFixed(2)}% of all neurons)`;
+}
+function table() {
+  const mx = Math.max(...R.map(r => r.trig_union)), mxl = Math.max(...R.map(r => r.trig_last));
+  let t = ' #  word-pieces  reply-start token triggered    whole-prompt union             avg/token   text-reply neurons on (reply-start)\n';
+  R.forEach((r, k) => t += `${String(k + 1).padStart(2)}  ${String(r.content_tokens).padStart(10)}  ${N(r.trig_last).padStart(8)} ${'#'.repeat(Math.round(18 * r.trig_last / mxl)).padEnd(18)}  ${N(r.trig_union).padStart(8)} ${'#'.repeat(Math.round(18 * r.trig_union / mx)).padEnd(18)} ${N(r.avg_per_token).padStart(8)}   ${String(r.text_set_last).padStart(5)} / ${r.text_set_size}\n`);
+  $('#table').textContent = 'SMALLEST -> BIGGEST PROMPT\n' + t;
+}
+function sel(k) { cur = k; document.querySelectorAll('#btns button').forEach((b, i) => b.className = i === k ? 'on' : ''); info(); render(); }
+for (let k = 0; k < R.length; k++) { const b = document.createElement('button'); b.textContent = k + 1; b.onclick = () => { stop(); sel(k); }; $('#btns').appendChild(b); }
+$('#prev').onclick = () => { stop(); sel((cur + 9) % 10); }; $('#next').onclick = () => { stop(); sel((cur + 1) % 10); };
+function stop() { if (timer) { clearInterval(timer); timer = null; $('#play').innerHTML = '&#9654; play small &rarr; big'; } }
+$('#play').onclick = () => { if (timer) return stop(); sel(0); $('#play').textContent = '|| stop'; timer = setInterval(() => { if (cur >= 9) return stop(); sel(cur + 1); }, 1800); };
+$('#m1').onclick = () => { mode = 1; $('#m1').className = 'on'; $('#m2').className = ''; info(); render(); };
+$('#m2').onclick = () => { mode = 2; $('#m2').className = 'on'; $('#m1').className = ''; info(); render(); };
+const view = (a, b, z) => () => { yaw = a; pitch = b; zoom = z; render(); };
+$('#v1').onclick = view(0, 0, 1.55); $('#v2').onclick = view(0, 1.5, 1.55); $('#v3').onclick = view(0.42, 0.3, 1.45);
+c.onmousedown = () => { drag = true; c.style.cursor = 'grabbing'; }; window.onmouseup = () => { drag = false; c.style.cursor = 'grab'; };
+c.onmousemove = e => {
+  if (drag) { yaw += e.movementX * 0.008; pitch = Math.max(-1.55, Math.min(1.55, pitch + e.movementY * 0.008)); render(); return; }
+  const b = c.getBoundingClientRect(), mx = (e.clientX - b.left) * c.width / b.width, my = (e.clientY - b.top) * c.height / b.height;
+  let best = null, bd = 80; for (const n of nodes) { const d = (n[0] - mx) ** 2 + (n[1] - my) ** 2; if (d < bd) { bd = d; best = n; } }
+  pick = best; if (best) $('#hover').textContent = `layer ${best[2]}  neuron #${best[3]}  ${best[4] ? 'TEXT-REPLY neuron (triggered)' : 'triggered neuron'}${mode === 1 ? '  activation (relative to loudest in layer) ' + (best[5] / 127).toFixed(2) : ''}`; render();
+};
+c.onwheel = e => { e.preventDefault(); zoom = Math.max(0.4, Math.min(6, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); render(); };
+setInterval(() => { if ($('#spin').checked && !drag) { yaw += 0.01; render(); } }, 40);
+$('#legend').textContent =
+`HOW TO READ THE MAP
+  each of the 36 grey frames = one layer (layer 0 on the left); inside a frame, neuron #0 is top-left, 128 neurons per row
+  faint dots ..... a sample of all neurons (every 16th), so you can see the frame
+  GOLD ........... the ${N(R[0].text_set_size)} text-reply neurons (found by comparing text replies with code replies); always shown
+  cyan ........... neurons triggered by this prompt (brighter = stronger)
+  WHITE .......... triggered neurons that are ALSO text-reply neurons: the part of this prompt's activity that belongs to the text-reply circuit
+  "triggered" = activation at least 10% of the loudest neuron in that layer, for that token`;
+table(); sel(0);
+</script></body></html>

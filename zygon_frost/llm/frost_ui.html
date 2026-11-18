@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frost 1.0</title>
+<style>
+:root{--side:#0A5C6E;--side2:#084A5A;--side3:#0E7389;--acc:#14A9B8;--bg:#E8F2F4;--card:#fff;--ink:#0B2E38;--mute:#5F8590;--line:#CBE0E5;--user:#0A6C80}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);display:flex;overflow:hidden}
+#side{width:290px;background:var(--side);color:#E6F5F7;display:flex;flex-direction:column;transition:margin-left .2s;flex:none}
+#side.hidden{margin-left:-290px}
+#brand{padding:16px 16px 8px;font-size:21px;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:10px}
+#brand i{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 4px #14A9B833}
+#newchat{margin:6px 14px 10px;padding:10px 12px;border:1px solid #ffffff55;background:var(--side3);color:#fff;border-radius:10px;cursor:pointer;font:inherit;font-weight:600;text-align:left}
+#newchat:hover{background:#12859D}
+#scroll{flex:1;overflow-y:auto;padding:0 8px 8px}
+.sec{margin:14px 8px 4px;font-size:11px;font-weight:700;letter-spacing:1.2px;color:#9FD3DB;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none}
+.item{display:flex;align-items:center;gap:6px;padding:8px 10px;margin:2px 0;border-radius:8px;cursor:pointer;color:#E6F5F7;font-size:14px}
+.item:hover{background:var(--side2)}.item.on{background:var(--side3)}
+.item span.t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .x{opacity:0;border:0;background:none;color:#cfe;cursor:pointer;font-size:15px;padding:0 4px}
+.item:hover .x{opacity:.8}.item .x:hover{opacity:1;color:#fff}
+.grp{margin:8px 10px 2px;font-size:12px;color:#9FD3DB}
+.sub{font-size:11px;color:#9FD3DB}
+#sysbox{padding:10px 14px;border-top:1px solid #ffffff22}#sysbox textarea{width:100%;border-radius:8px;border:1px solid #ffffff44;background:#08495a;color:#fff;font:12.5px/1.4 inherit;padding:6px 8px;resize:vertical}#sysbox button{margin-top:5px;padding:4px 10px;border-radius:8px;border:0;background:#ffffff22;color:#fff;cursor:pointer;font:inherit}
+#model{padding:12px 14px;background:var(--side2);font-size:12.5px;border-top:1px solid #ffffff22}
+#model button{margin-top:8px;padding:7px 12px;border-radius:8px;border:0;background:var(--acc);color:#04323a;font:inherit;font-weight:700;cursor:pointer;width:100%}
+#model button.alt{background:#ffffff22;color:#fff}
+#model .err{color:#FFD3A8;margin-top:6px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#top{height:54px;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--card);border-bottom:1px solid var(--line);flex:none}
+#top button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit;color:var(--ink)}
+#title{font-weight:650;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pill{font-size:12px;padding:3px 10px;border-radius:99px;background:#d5ebef;color:#0A5C6E}
+#pill.on{background:#0A6C80;color:#fff}
+#view{flex:1;overflow-y:auto;padding:22px 0}
+#msgs{max-width:780px;margin:0 auto;padding:0 18px}
+.m{margin:14px 0;display:flex}
+.m.u{justify-content:flex-end}
+.b{max-width:86%;padding:10px 14px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word}
+.u .b{background:var(--user);color:#fff;border-bottom-right-radius:4px}
+.a .b{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}
+.meta{font-size:11px;color:var(--mute);margin:-8px 0 0 4px}
+.pb button{margin-left:8px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:1px 8px;cursor:pointer;font:inherit;color:var(--ink)}.pb button:hover{background:#d5ebef}
+.empty{text-align:center;color:var(--mute);margin-top:15vh}
+.empty h1{font-size:34px;color:var(--side);margin:0 0 6px}
+#bar{padding:12px 16px 18px;flex:none}
+#box{max-width:780px;margin:0 auto;display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px;box-shadow:0 2px 10px #0a5c6e14}
+#box:focus-within{border-color:var(--acc)}
+#inp{flex:1;border:0;outline:0;resize:none;font:inherit;color:var(--ink);background:transparent;max-height:160px;padding:6px 0}
+#send{border:0;border-radius:10px;background:var(--side);color:#fff;font:inherit;font-weight:650;padding:0 18px;cursor:pointer}
+#send:hover{background:var(--side3)}#send.stop{background:#B3442F}
+#rep{display:none;flex:1;flex-direction:column}
+#rep iframe{flex:1;border:0;background:#fff}
+#rephead{padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+#rephead button,#rephead a{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;font:inherit;color:var(--ink);text-decoration:none}
+</style></head><body>
+<aside id="side">
+  <div id="brand"><i></i>Frost 1.0</div>
+  <button id="newchat">+ New chat</button>
+  <div id="scroll">
+    <div class="sec">CHATS</div>
+    <div id="chats"></div>
+    <div class="sec" id="repsec">REPORTS <span id="repcaret">&#9662;</span></div>
+    <div id="reps"></div>
+  </div>
+  <div id="sysbox"><div style="font-size:11px;font-weight:700;letter-spacing:1.2px;color:#9FD3DB;margin-bottom:4px">SYSTEM PROMPT <span style="font-weight:400">(empty = none)</span></div>
+    <textarea id="sys" rows="2"></textarea><button id="sysapply">Apply</button></div>
+  <div id="model"></div>
+</aside>
+<div id="main">
+  <div id="top"><button id="tog" title="Show or hide the sidebar">&#9776;</button><div id="title">New chat</div><span id="pill">model off</span></div>
+  <div id="view"><div id="msgs"></div></div>
+  <div id="bar"><div id="box"><textarea id="inp" rows="1" placeholder="Message Frost 1.0..."></textarea><button id="send">Send</button></div></div>
+  <div id="rep"><div id="rephead"><button id="back">&larr; Back to chat</button><b id="reptitle"></b><span style="flex:1"></span><a id="repnew" target="_blank">Open in new tab</a></div><iframe id="frame"></iframe></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+let cur = null, chats = [], busy = false, S = {}, repOpen = true, showingReport = null;
+const api = (u, b) => fetch(u, b === undefined ? {} : {method: 'POST', body: JSON.stringify(b)}).then(r => r.json());
+
+// ---------------- sidebar ----------------
+async function loadChats() {
+  chats = await api('/api/chats');
+  $('#chats').innerHTML = chats.length ? '' : '<div class="grp">no chats yet</div>';
+  chats.forEach(c => {
+    const d = document.createElement('div'); d.className = 'item' + (c.id === cur && !showingReport ? ' on' : '');
+    d.innerHTML = `<span class="t">${esc(c.title)}</span><button class="x" title="Delete">&#10005;</button>`;
+    d.onclick = () => openChat(c.id);
+    d.querySelector('.x').onclick = async e => { e.stopPropagation(); if (!confirm('Delete this chat?')) return; await api('/api/chats/delete', {id: c.id}); if (cur === c.id) { cur = null; render([]); $('#title').textContent = 'New chat'; } loadChats(); };
+    $('#chats').appendChild(d);
+  });
+}
+async function loadReports() {
+  const groups = await api('/api/reports'); const box = $('#reps'); box.innerHTML = '';
+  groups.forEach(g => {
+    const h = document.createElement('div'); h.className = 'grp'; h.textContent = `${g.group} (${g.items.length})`; box.appendChild(h);
+    g.items.forEach(it => {
+      const d = document.createElement('div'); d.className = 'item' + (showingReport === it.key ? ' on' : '');
+      const kb = it.size > 1e6 ? (it.size / 1e6).toFixed(1) + ' MB' : Math.round(it.size / 1e3) + ' KB';
+      d.innerHTML = `<span class="t" title="${esc(it.title)}">${esc(it.title)}</span><span class="sub">${it.size ? kb : 'live'}</span>`;
+      d.onclick = () => openReport(it);
+      box.appendChild(d);
+    });
+  });
+  if (!groups.length) box.innerHTML = '<div class="grp">no reports yet</div>';
+}
+$('#repsec').onclick = () => { repOpen = !repOpen; $('#reps').style.display = repOpen ? '' : 'none'; $('#repcaret').innerHTML = repOpen ? '&#9662;' : '&#9656;'; };
+$('#sys').oninput = () => { $('#sys').dataset.d = '1'; };
+$('#sysapply').onclick = async () => { await api('/api/system', {text: $('#sys').value}); $('#sys').dataset.d = ''; $('#sysapply').textContent = 'Applied'; setTimeout(() => $('#sysapply').textContent = 'Apply', 1200); };
+$('#tog').onclick = () => $('#side').classList.toggle('hidden');
+
+// ---------------- model status ----------------
+async function loadState() {
+  S = await api('/api/state'); const m = $('#model'); if (document.activeElement !== $('#sys') && !$('#sys').dataset.d) $('#sys').value = S.system;
+  const gb = x => (x / 2 ** 30).toFixed(1) + ' GiB';
+  let h = `<b>${S.loaded ? '&#9679; Frost 1.0 ready' : S.loading ? '&#9696; loading the model...' : '&#9675; model not loaded'}</b><br>`;
+  h += S.loaded ? (S.patched.length ? 'edited weights applied: ' + S.patched.join(', ') : (S.frost_patch_present ? 'weights: original (edited patch exists, reload to use it)' : 'weights: original Qwen2.5-3B + Frost system prompt')) : `free RAM ${gb(S.ram_free)} of ${gb(S.ram_total)} (needs ~13 GiB)`;
+  if (S.error) h += `<div class="err">${esc(S.error)}</div>`;
+  if (S.loaded) h += '<button class="alt" id="unl">Unload model (free RAM)</button><button class="alt" id="rel">Reload (picks up edited weights)</button>';
+  else if (!S.loading) h += '<button id="load">Load Frost 1.0</button>';
+  m.innerHTML = h;
+  if ($('#load')) $('#load').onclick = async () => { await api('/api/model/load', {}); loadState(); };
+  if ($('#unl')) $('#unl').onclick = async () => { await api('/api/model/unload', {}); loadState(); };
+  if ($('#rel')) $('#rel').onclick = async () => { await api('/api/model/unload', {}); await api('/api/model/load', {}); loadState(); };
+  $('#pill').textContent = S.loaded ? 'Frost 1.0 online' : S.loading ? 'loading...' : 'model off'; $('#pill').className = S.loaded ? 'on' : '';
+}
+
+// ---------------- chat ----------------
+function bubble(role, text, meta) {
+  const d = document.createElement('div'); d.className = 'm ' + (role === 'user' ? 'u' : 'a');
+  d.innerHTML = `<div class="b"></div>`; d.firstChild.textContent = text; $('#msgs').appendChild(d);
+  if (meta) { const x = document.createElement('div'); x.className = 'meta'; x.textContent = meta; $('#msgs').appendChild(x); }
+  return d.firstChild;
+}
+function pathBar(id, run) {
+  const x = document.createElement('div'); x.className = 'meta pb'; $('#msgs').appendChild(x);
+  const draw = async () => {
+    const st = (await api('/api/locker/status?ids=' + id))[id];
+    if (!st) { x.textContent = 'neuron path: erased from the index (it was rarely used)'; return; }
+    let t = '';
+    if (st.status === 'locked') t = run && run.mode === 'locked' ? `⚡ locked neuron path replayed in ${run.ms} ms - no layer was run (used ${st.hits}x)` : `neuron path locked - the same ask now answers instantly (used ${st.hits}x)`;
+    else t = run && run.mode === 'branch' ? `branch: ${run.on_path} of ${run.tokens} tokens followed an older path, ${run.passes} model passes` : run ? `new neuron path discovered (${run.tokens} tokens, ${run.passes} passes)` : 'neuron path not locked';
+    x.innerHTML = ''; x.append(t);
+    const b = (label, fn) => { const e = document.createElement('button'); e.textContent = label; e.onclick = async () => { await fn(); draw(); }; x.append(e); };
+    if (st.status === 'locked') b('Unlock', () => api('/api/locker/unlock', {id}));
+    else { b('Approve and lock', () => api('/api/locker/approve', {id})); b('Discard', () => api('/api/locker/delete', {id})); }
+  };
+  draw();
+}
+function render(msgs) {
+  $('#msgs').innerHTML = '';
+  if (!msgs.length) $('#msgs').innerHTML = '<div class="empty"><h1>Frost 1.0</h1>Ask anything. Chats are saved on the left.</div>';
+  msgs.forEach(m => { bubble(m.role, m.content); if (m.role === 'assistant' && m.path) pathBar(m.path.id, null); });
+  $('#view').scrollTop = $('#view').scrollHeight;
+}
+function showChatView() { showingReport = null; $('#rep').style.display = 'none'; $('#view').style.display = ''; $('#bar').style.display = ''; }
+async function openChat(id) {
+  if (busy) return; showChatView(); cur = id; const c = await api('/api/chat?id=' + encodeURIComponent(id));
+  $('#title').textContent = c.title; render(c.messages); loadChats(); loadReports();
+}
+async function newChat() {
+  if (busy) return; showChatView(); const c = await api('/api/chats', {}); cur = c.id; $('#title').textContent = 'New chat'; render([]); await loadChats(); $('#inp').focus();
+}
+$('#newchat').onclick = newChat;
+function openReport(it) {
+  showingReport = it.key; $('#view').style.display = 'none'; $('#bar').style.display = 'none'; $('#rep').style.display = 'flex';
+  const u = '/report?k=' + encodeURIComponent(it.key); $('#frame').src = u; $('#repnew').href = u; $('#reptitle').textContent = it.title; $('#title').textContent = 'Report'; loadChats(); loadReports();
+}
+$('#back').onclick = () => { showChatView(); $('#title').textContent = chats.find(c => c.id === cur)?.title || 'New chat'; loadChats(); loadReports(); };
+
+async function send() {
+  const text = $('#inp').value.trim(); if (!text) return;
+  if (busy) return;
+  if (!S.loaded) { alert('The model is not loaded yet. Press "Load Frost 1.0" in the sidebar.'); return; }
+  if (!cur) await newChat();
+  if ($('#msgs .empty')) $('#msgs').innerHTML = '';
+  $('#inp').value = ''; $('#inp').style.height = 'auto'; bubble('user', text);
+  const out = bubble('assistant', '...'); let got = false, info = '', pinfo = null;
+  busy = true; $('#send').textContent = 'Stop'; $('#send').className = 'stop'; $('#view').scrollTop = $('#view').scrollHeight;
+  try {
+    const r = await fetch('/api/send', {method: 'POST', body: JSON.stringify({chat_id: cur, text})});
+    if (!r.ok) { out.textContent = (await r.json()).error; throw 0; }
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) {
+      const {done, value} = await rd.read(); if (done) break;
+      buf += dec.decode(value, {stream: true}); let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!line.trim()) continue;
+        const o = JSON.parse(line);
+        if (o.t === 'tok') { if (!got) { out.textContent = ''; got = true; } out.textContent += o.s; $('#view').scrollTop = $('#view').scrollHeight; }
+        else if (o.t === 'info') { if (!got) out.textContent = `reading ${o.prompt_tokens} tokens (${o.reused} remembered)...`; }
+        else if (o.t === 'note') { out.textContent = o.s; }
+        else if (o.t === 'path') pinfo = o;
+        else if (o.t === 'done') info = o.locked ? `${o.tokens} tokens replayed from a locked path in ${o.ms} ms` : `${o.tokens} tokens, ${o.tok_s} tokens/s` + (o.passes ? `, ${o.passes} model passes` : '');
+        else if (o.t === 'error') out.textContent = 'Error: ' + o.s;
+      }
+    }
+    if (info) { const x = document.createElement('div'); x.className = 'meta'; x.textContent = info; $('#msgs').appendChild(x); }
+    if (pinfo) pathBar(pinfo.id, pinfo);
+  } catch (e) { if (e) out.textContent = 'Connection problem: ' + e; }
+  busy = false; $('#send').textContent = 'Send'; $('#send').className = ''; loadChats(); loadState();
+  const c = chats.find(c => c.id === cur); if (c) $('#title').textContent = c.title;
+}
+$('#send').onclick = () => busy ? api('/api/stop', {}) : send();
+$('#inp').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!busy) send(); } };
+$('#inp').oninput = () => { const t = $('#inp'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; };
+
+(async () => { await loadState(); await loadChats(); await loadReports(); if (chats.length) openChat(chats[0].id); else render([]);
+  setInterval(() => { if (!busy) { loadState(); loadReports(); } }, 8000); })();
+</script></body></html>

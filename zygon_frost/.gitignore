@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.gguf
+*.log
+*.err
+model/original/
+model/exp_weights/
+llm/llama/
+llm/model/
+telegram.env
+.env
+private/
+maker_private.npz
